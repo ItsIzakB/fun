@@ -10,6 +10,10 @@ export function createShell({ title = "Tiny Arcade", showHomeLink = false } = {}
       <span>Tiny Arcade</span>
     </a>
     <nav class="site-nav" aria-label="Primary">
+      <span class="session-timer" aria-label="Session time remaining">
+        <span>Time</span>
+        <strong data-session-timer>30:00</strong>
+      </span>
       ${showHomeLink ? '<a href="/" data-link>Back to home</a>' : ""}
     </nav>
   `;

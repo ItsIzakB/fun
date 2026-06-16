@@ -1,5 +1,6 @@
 import { games, getGameByPath } from "./games.js";
 import { createShell, renderNotFound } from "./layout.js";
+import { initSessionLimit, isSessionExpired, renderTimeUp } from "./sessionLimit.js";
 
 let activeCleanup = null;
 let routeVersion = 0;
@@ -61,6 +62,11 @@ export async function renderRoute() {
   const version = (routeVersion += 1);
 
   const app = document.querySelector("#app");
+  if (isSessionExpired()) {
+    app.replaceChildren(renderTimeUp());
+    return;
+  }
+
   const { pathname } = window.location;
   const game = getGameByPath(pathname);
 
@@ -91,7 +97,15 @@ export async function renderRoute() {
   window.scrollTo({ top: 0, behavior: "instant" });
 }
 
+function handleSessionExpired() {
+  cleanupCurrentPage();
+  const app = document.querySelector("#app");
+  app.replaceChildren(renderTimeUp());
+}
+
 export function initRouter() {
+  initSessionLimit(handleSessionExpired);
+
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[data-link]");
     if (!link) return;
