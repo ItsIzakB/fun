@@ -22,6 +22,7 @@
 }
 
 .cavern-stage {
+  position: relative;
   overflow: hidden;
   padding: 12px;
 }
@@ -139,6 +140,92 @@
 
 .inventory-slot strong {
   font-size: 1rem;
+}
+
+.tools-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.tool-row.is-owned {
+  color: #d8ffad;
+}
+
+.crafting-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.recipe-row strong {
+  display: block;
+  margin-bottom: 7px;
+}
+
+.ingredient-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ingredient-tag {
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.recipe-row button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: var(--green);
+  color: #07111a;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.recipe-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.biome-label {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  text-transform: uppercase;
+  transition: opacity 240ms ease;
 }
 
 .cavern-controls {

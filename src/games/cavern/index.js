@@ -16,6 +16,7 @@ export function renderCavernPage() {
       <div class="cavern-layout">
         <section class="cavern-stage" aria-label="Cavern Crafter play area">
           <canvas class="cavern-canvas" data-cavern-canvas></canvas>
+          <div class="biome-label" data-cavern-biome>Meadow</div>
         </section>
 
         <aside class="cavern-sidebar" aria-label="Cavern Crafter controls and inventory">
@@ -33,13 +34,18 @@ export function renderCavernPage() {
           </section>
 
           <section class="cavern-panel">
+            <h2>Crafting</h2>
+            <div class="crafting-list" data-cavern-crafting></div>
+          </section>
+
+          <section class="cavern-panel">
             <h2>Controls</h2>
             <dl class="cavern-controls">
               <div><dt>A / D</dt><dd>Move</dd></div>
               <div><dt>W / Space</dt><dd>Jump</dd></div>
               <div><dt>Click</dt><dd>Mine or bonk creatures</dd></div>
               <div><dt>Right click</dt><dd>Place selected</dd></div>
-              <div><dt>1-5</dt><dd>Select block</dd></div>
+              <div><dt>1-7</dt><dd>Select block</dd></div>
             </dl>
           </section>
 
@@ -57,6 +63,8 @@ export function renderCavernPage() {
   const game = new CavernGame({
     canvas: main.querySelector("[data-cavern-canvas]"),
     inventoryEl: main.querySelector("[data-cavern-inventory]"),
+    craftingEl: main.querySelector("[data-cavern-crafting]"),
+    biomeEl: main.querySelector("[data-cavern-biome]"),
     messageEl: main.querySelector("[data-cavern-message]"),
     healthEl: main.querySelector("[data-cavern-health]"),
     resetButton: main.querySelector("[data-cavern-reset]")

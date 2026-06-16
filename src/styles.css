@@ -60,6 +60,12 @@ canvas {
   padding: 12px 0;
 }
 
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .brand,
 .site-nav a,
 .button-link {
@@ -99,6 +105,29 @@ canvas {
 .button-link {
   padding: 9px 14px;
   font-weight: 800;
+}
+
+.session-timer {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.session-timer strong {
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-timer strong[data-low-time] {
+  color: #ff6b6b;
 }
 
 .brand:hover,
@@ -248,6 +277,26 @@ h1 {
   justify-items: start;
 }
 
+.session-expired-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.session-expired {
+  justify-items: center;
+  text-align: center;
+}
+
+.session-expired h1 {
+  max-width: 780px;
+}
+
+.session-expired p {
+  margin-right: auto;
+  margin-left: auto;
+}
+
 .button-link--button {
   width: 100%;
   border: 0;
@@ -263,6 +312,10 @@ h1 {
 
   .site-header {
     align-items: flex-start;
+  }
+
+  .site-nav {
+    flex-wrap: wrap;
   }
 
   h1 {

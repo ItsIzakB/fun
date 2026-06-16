@@ -16,8 +16,26 @@ const ATTACK = {
   DASH_SLAM: "dashSlam",
   TRIPLE_PROJECTILE: "tripleProjectile",
   BARRAGE: "barrage",
-  CHAIN: "chain"
+  CHAIN: "chain",
+  LEAP: "leapSlam",
+  STAFF: "staff",
+  RAPID_FIRE: "rapidFire",
+  DOME_BLAST: "domeBlast"
 };
+
+const PROJECTILE_TYPES = [
+  { name: "ember", color: 0xff583d, emissive: 0xff2a00, shape: "sphere", size: 0.24, speed: 10.5, damage: 12 },
+  { name: "violet shard", color: 0xb15cff, emissive: 0x6f25ff, shape: "octa", size: 0.28, speed: 12.5, damage: 13 },
+  { name: "bone spike", color: 0xe8dfc8, emissive: 0x8a6d4a, shape: "cone", size: 0.3, speed: 13.5, damage: 14 },
+  { name: "green curse", color: 0x65ff8a, emissive: 0x1bc85a, shape: "sphere", size: 0.22, speed: 11.2, damage: 11 },
+  { name: "blue star", color: 0x66d9ff, emissive: 0x1b8cff, shape: "octa", size: 0.26, speed: 12.8, damage: 12 },
+  { name: "blood nail", color: 0xd7193f, emissive: 0x88000f, shape: "cone", size: 0.26, speed: 14.8, damage: 15 },
+  { name: "gold spark", color: 0xffd34d, emissive: 0xff9f1a, shape: "sphere", size: 0.18, speed: 15.5, damage: 9 },
+  { name: "ashen cube", color: 0x9ca0a8, emissive: 0x343840, shape: "box", size: 0.26, speed: 10.2, damage: 13 },
+  { name: "frost bead", color: 0xb8f4ff, emissive: 0x70d6ff, shape: "sphere", size: 0.25, speed: 9.5, damage: 12 },
+  { name: "black sun", color: 0x241a2e, emissive: 0x8d2cff, shape: "sphere", size: 0.32, speed: 8.8, damage: 18 },
+  { name: "seeker eye", color: 0xff4fd8, emissive: 0xff1faf, shape: "octa", size: 0.3, speed: 8.4, damage: 16, homing: true }
+];
 
 const ChromaticAberrationShader = {
   uniforms: {
@@ -247,6 +265,65 @@ class ProceduralAudio {
     osc.start(now);
     osc.stop(now + 0.34);
   }
+  earthbreak() {
+    if (!this.ensure()) return;
+    this.kick(86, 24, 0.55, 0.42);
+    this.noise(0.75, 95, 0.34);
+    setTimeout(() => this.kick(58, 22, 0.36, 0.24), 90);
+  }
+  powerCharge(duration = 2.2) {
+    if (!this.ensure()) return;
+    const now = this.ctx.currentTime;
+    const rumble = this.ctx.createOscillator();
+    const scream = this.ctx.createOscillator();
+    const rumbleGain = this.ctx.createGain();
+    const screamGain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(180, now);
+    filter.frequency.exponentialRampToValueAtTime(1800, now + duration);
+
+    rumble.type = "sawtooth";
+    rumble.frequency.setValueAtTime(34, now);
+    rumble.frequency.exponentialRampToValueAtTime(88, now + duration);
+    rumbleGain.gain.setValueAtTime(0.001, now);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.26, now + duration * 0.86);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.08);
+
+    scream.type = "triangle";
+    scream.frequency.setValueAtTime(210, now);
+    scream.frequency.exponentialRampToValueAtTime(1180, now + duration);
+    screamGain.gain.setValueAtTime(0.001, now);
+    screamGain.gain.exponentialRampToValueAtTime(0.13, now + duration * 0.9);
+    screamGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.06);
+
+    rumble.connect(rumbleGain);
+    rumbleGain.connect(this.master);
+    scream.connect(filter);
+    filter.connect(screamGain);
+    screamGain.connect(this.master);
+    rumble.start(now);
+    scream.start(now);
+    rumble.stop(now + duration + 0.12);
+    scream.stop(now + duration + 0.12);
+    this.noise(duration, 620, 0.08);
+  }
+  domeDetonate() {
+    if (!this.ensure()) return;
+    this.kick(120, 18, 0.82, 0.62);
+    this.noise(1.05, 70, 0.5);
+    this.noise(0.42, 1700, 0.22);
+    setTimeout(() => this.kick(64, 20, 0.55, 0.36), 75);
+    setTimeout(() => this.noise(0.7, 45, 0.28), 120);
+  }
+  leapExplosion() {
+    if (!this.ensure()) return;
+    this.kick(150, 16, 1.05, 0.72);
+    this.noise(1.15, 58, 0.58);
+    this.noise(0.36, 2600, 0.24);
+    setTimeout(() => this.kick(82, 18, 0.7, 0.42), 85);
+    setTimeout(() => this.noise(0.9, 110, 0.34), 160);
+  }
   parry() {
     if (!this.ensure()) return;
     for (const freq of [880, 1200]) this.oscillatorHit("sine", freq, 0.1, 0);
@@ -412,8 +489,8 @@ export class DarkSoulsGame {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x8ea9c5);
-    this.scene.fog = new THREE.FogExp2(0x8ea9c5, 0.012);
+    this.scene.background = new THREE.Color(0x7b95ad);
+    this.scene.fog = new THREE.FogExp2(0x7b95ad, 0.012);
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 90);
     this.bloomLayer = new THREE.Layers();
     this.bloomLayer.set(BLOOM_LAYER);
@@ -480,13 +557,13 @@ export class DarkSoulsGame {
   }
 
   createScene() {
-    const ambient = new THREE.AmbientLight(0xb8c4aa, 0.98);
+    const ambient = new THREE.AmbientLight(0xacbaa3, 0.82);
     this.scene.add(ambient);
 
-    const hemi = new THREE.HemisphereLight(0xd6e4ff, 0x425d35, 1.28);
+    const hemi = new THREE.HemisphereLight(0xc3d2e7, 0x3a5131, 1.05);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffe1a6, 1.75);
+    const sun = new THREE.DirectionalLight(0xffd89a, 1.32);
     sun.position.set(-18, 24, 14);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
@@ -677,11 +754,16 @@ export class DarkSoulsGame {
       new THREE.MeshStandardMaterial({ color: 0xc7b193, roughness: 0.75 })
     );
     head.position.y = 1.65;
-    const shoulder = new THREE.Mesh(
+    const rightShoulder = new THREE.Mesh(
       new THREE.SphereGeometry(0.18, 12, 8),
       new THREE.MeshStandardMaterial({ color: 0x37404d, roughness: 0.82 })
     );
-    shoulder.position.set(0.42, 1.18, -0.05);
+    rightShoulder.position.set(0.42, 1.18, -0.05);
+    const leftShoulder = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 12, 8),
+      new THREE.MeshStandardMaterial({ color: 0x37404d, roughness: 0.82 })
+    );
+    leftShoulder.position.set(-0.38, 1.14, -0.04);
     const legMaterial = new THREE.MeshStandardMaterial({ color: 0x242b36, roughness: 0.88 });
     const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.62, 6, 10), legMaterial);
     leftLeg.name = "leftLeg";
@@ -690,11 +772,16 @@ export class DarkSoulsGame {
     rightLeg.name = "rightLeg";
     rightLeg.position.set(0.18, 0.28, 0);
     const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.55, 6, 10), legMaterial);
-    leftArm.position.set(-0.42, 0.98, -0.02);
-    leftArm.rotation.z = -0.2;
+    leftArm.name = "leftArm";
+    leftArm.position.set(-0.28, 1.02, -0.18);
+    leftArm.rotation.set(-0.86, 0.12, -0.62);
+    const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.6, 6, 10), legMaterial);
+    rightArm.name = "rightArm";
+    rightArm.position.set(0.38, 1.04, -0.12);
+    rightArm.rotation.set(-0.72, -0.04, 0.48);
     const swordPivot = new THREE.Group();
     swordPivot.name = "swordPivot";
-    swordPivot.position.set(0.5, 1.08, -0.1);
+    swordPivot.position.set(0.38, 1.08, -0.12);
     swordPivot.rotation.set(-0.18, 0.18, 0.58);
     const blade = makeBox(0.12, 0.12, 1.25, 0xbfc5ce, 0.42);
     blade.position.set(0, 0, -0.68);
@@ -702,9 +789,10 @@ export class DarkSoulsGame {
     blade.userData.baseColor = 0xbfc5ce;
     blade.userData.baseEmissive = 0x000000;
     const hilt = makeBox(0.36, 0.1, 0.1, 0x6d4931, 0.65);
+    hilt.name = "hilt";
     hilt.position.set(0, 0, -0.08);
     swordPivot.add(hilt, blade);
-    group.add(body, head, shoulder, leftLeg, rightLeg, leftArm, swordPivot);
+    group.add(body, head, rightShoulder, leftShoulder, leftLeg, rightLeg, leftArm, rightArm, swordPivot);
     group.traverse((object) => {
       object.castShadow = true;
     });
@@ -713,9 +801,12 @@ export class DarkSoulsGame {
 
   applyWeaponVisuals() {
     const blade = this.player.group?.getObjectByName("blade");
+    const hilt = this.player.group?.getObjectByName("hilt");
     if (!blade) return;
     blade.scale.set(1, 1, this.weapon.bladeScale);
     blade.position.z = -0.08 - 0.6 * this.weapon.bladeScale;
+    if (hilt) hilt.scale.x = this.weapon.bladeScale > 0.9 ? 1.35 : 1;
+    this.updatePlayerArmGrip(0);
   }
 
   createBossMesh() {
@@ -743,13 +834,28 @@ export class DarkSoulsGame {
       })
     );
     head.position.y = 3.05;
+    const armMaterial = new THREE.MeshStandardMaterial({ color: 0x21171d, roughness: 0.84 });
+    const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.95, 6, 10), armMaterial);
+    leftArm.name = "bossLeftArm";
+    leftArm.position.set(-0.82, 1.95, 0.03);
+    leftArm.rotation.z = 0.24;
+    const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 1.1, 6, 10), armMaterial);
+    rightArm.name = "bossRightArm";
+    rightArm.position.set(0.82, 1.95, 0.02);
+    rightArm.rotation.z = -0.18;
     const staff = makeBox(0.16, 3.4, 0.16, 0x403132);
+    staff.name = "bossStaff";
     staff.position.set(1.25, 1.75, 0.1);
+    staff.rotation.z = -0.08;
     const legMaterial = new THREE.MeshStandardMaterial({ color: 0x100d11, roughness: 0.86 });
     const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.88, 6, 10), legMaterial);
-    leftLeg.position.set(-0.38, 0.45, 0.02);
+    leftLeg.name = "bossLeftLeg";
+    leftLeg.position.set(-0.38, 0.45, 0.12);
+    leftLeg.rotation.x = 0.22;
     const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.88, 6, 10), legMaterial);
-    rightLeg.position.set(0.38, 0.45, 0.02);
+    rightLeg.name = "bossRightLeg";
+    rightLeg.position.set(0.38, 0.39, -0.16);
+    rightLeg.rotation.x = -0.56;
     const ember = new THREE.Mesh(
       new THREE.SphereGeometry(0.28, 16, 10),
       new THREE.MeshStandardMaterial({
@@ -761,7 +867,7 @@ export class DarkSoulsGame {
     ember.position.set(1.25, 3.58, 0.1);
     this.enableBloom(ember);
     this.enableBloom(head);
-    group.add(leftLeg, rightLeg, robe, shoulders, head, staff, ember);
+    group.add(leftLeg, rightLeg, robe, shoulders, head, leftArm, rightArm, staff, ember);
     group.traverse((object) => {
       object.castShadow = true;
       object.receiveShadow = true;
@@ -816,7 +922,11 @@ export class DarkSoulsGame {
       cooldown: 1,
       attackHit: false,
       tripleShots: 0,
+      rapidShots: 0,
+      rapidTimer: 0,
       dashDirection: new THREE.Vector3(),
+      leapHeight: 0,
+      leapFollowup: null,
       stagger: 0,
       flash: 0
     };
@@ -1197,7 +1307,8 @@ export class DarkSoulsGame {
 
     if (this.player.attacking <= 0 || this.player.attackDuration <= 0) {
       sword.rotation.set(idle.x, idle.y, idle.z);
-      sword.position.set(0.5, 1.08, -0.1);
+      sword.position.set(0.38, 1.08, -0.12);
+      this.updatePlayerArmGrip(0);
       this.updateSwordGlow();
       return;
     }
@@ -1207,18 +1318,36 @@ export class DarkSoulsGame {
     const swing = Math.sin(snap * Math.PI);
     if (this.player.attackType === "heavy") {
       sword.rotation.set(-1.35 + snap * 2.55, 0.04, 0.2 - swing * 0.85);
-      sword.position.set(0.48, 1.18 - swing * 0.12, -0.24 - swing * 0.3);
+      sword.position.set(0.38, 1.18 - swing * 0.12, -0.24 - swing * 0.3);
     } else if (this.player.attackVariant === 1) {
       sword.rotation.set(-0.18 - swing * 0.55, -1.0 + snap * 2.35, 0.42 + swing * 0.7);
-      sword.position.set(0.46 - swing * 0.1, 1.1 + swing * 0.06, -0.08 - swing * 0.34);
+      sword.position.set(0.36 - swing * 0.1, 1.1 + swing * 0.06, -0.08 - swing * 0.34);
     } else if (this.player.attackVariant === 2) {
       sword.rotation.set(-0.82 + swing * 0.55, 0.28 - snap * 0.75, 1.0 - swing * 1.35);
-      sword.position.set(0.5, 1.2 - swing * 0.24, -0.18 - swing * 0.26);
+      sword.position.set(0.38, 1.2 - swing * 0.24, -0.18 - swing * 0.26);
     } else {
       sword.rotation.set(-0.24, 1.05 - snap * 2.35, 0.55 - swing * 0.78);
-      sword.position.set(0.5 + swing * 0.12, 1.08, -0.1 - swing * 0.32);
+      sword.position.set(0.38 + swing * 0.12, 1.08, -0.12 - swing * 0.32);
     }
+    this.updatePlayerArmGrip(swing, snap);
     this.updateSwordGlow();
+  }
+
+  updatePlayerArmGrip(swing = 0, snap = 0) {
+    const leftArm = this.player.group.getObjectByName("leftArm");
+    const rightArm = this.player.group.getObjectByName("rightArm");
+    if (!leftArm || !rightArm) return;
+
+    const twoHanded = this.weapon.bladeScale > 0.9 ? 1 : 0.55;
+    leftArm.position.set(-0.18 + swing * 0.06, 1.02 + swing * 0.05, -0.22 - swing * 0.12);
+    leftArm.rotation.set(-0.92 - swing * 0.38, 0.18 - snap * 0.25, -0.72 + swing * 0.28);
+    rightArm.position.set(0.34 + swing * 0.04, 1.04 + swing * 0.03, -0.15 - swing * 0.1);
+    rightArm.rotation.set(-0.78 - swing * 0.28, -0.06 + snap * 0.18, 0.52 - swing * 0.22);
+
+    if (twoHanded < 1) {
+      leftArm.position.x -= 0.08;
+      leftArm.rotation.z -= 0.22;
+    }
   }
 
   attackSnap(progress) {
@@ -1311,7 +1440,8 @@ export class DarkSoulsGame {
     const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
     this.boss.group.rotation.y = approachAngle(this.boss.group.rotation.y, targetYaw, dt * 1.8);
     this.boss.group.position.copy(this.boss.position);
-    this.boss.group.position.y = Math.sin(elapsed * 2.2) * 0.08;
+    this.boss.group.position.y = this.boss.leapHeight + Math.sin(elapsed * 2.2) * 0.08;
+    this.updateBossLimbAnimation(dt, elapsed, toPlayer.length());
 
     this.updateBossFlash(dt);
     if (this.boss.stagger > 0) {
@@ -1368,7 +1498,7 @@ export class DarkSoulsGame {
     const step = this.combo[this.comboIndex];
     if (!step) {
       this.combo = [];
-      this.comboRecovery = phaseTwo ? 0.6 : 1;
+      this.comboRecovery = randomBetween(1, phaseTwo ? 4.2 : 5);
       return;
     }
     this.startBossPrimitive(step.attack, dist);
@@ -1376,7 +1506,7 @@ export class DarkSoulsGame {
     this.comboTimer = step.gap;
     if (this.comboIndex >= this.combo.length) {
       this.combo = [];
-      this.comboRecovery = phaseTwo ? 0.6 : 1;
+      this.comboRecovery = randomBetween(1, phaseTwo ? 4.2 : 5);
     }
     this.boss.attackHit = false;
   }
@@ -1385,17 +1515,17 @@ export class DarkSoulsGame {
     const phaseTwo = this.boss.phase === 2;
     const templates = phaseTwo
       ? [
-          { name: "p2-1", attacks: [ATTACK.DASH_SLAM, ATTACK.TRIPLE_PROJECTILE, ATTACK.SWEEP] },
-          { name: "p2-2", attacks: [ATTACK.BARRAGE, ATTACK.CHAIN, ATTACK.SLAM, ATTACK.SPREAD] },
-          { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.SWEEP] },
-          { name: "p2-4", attacks: [ATTACK.CHAIN, ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM] },
-          { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.SPREAD, ATTACK.SWEEP, ATTACK.DASH_SLAM] }
+          { name: "p2-1", attacks: [ATTACK.LEAP, ATTACK.TRIPLE_PROJECTILE, ATTACK.STAFF, ATTACK.RAPID_FIRE] },
+          { name: "p2-2", attacks: [ATTACK.BARRAGE, ATTACK.CHAIN, ATTACK.SLAM, ATTACK.SPREAD, ATTACK.DOME_BLAST] },
+          { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.LEAP, ATTACK.RAPID_FIRE] },
+          { name: "p2-4", attacks: [ATTACK.CHAIN, ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DOME_BLAST] },
+          { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.SPREAD, ATTACK.STAFF, ATTACK.LEAP, ATTACK.RAPID_FIRE] }
         ]
       : [
-          { name: "p1-1", attacks: [ATTACK.PROJECTILE, ATTACK.SLAM] },
-          { name: "p1-2", attacks: [ATTACK.SPREAD, ATTACK.SWEEP] },
+          { name: "p1-1", attacks: [ATTACK.PROJECTILE, ATTACK.SLAM, ATTACK.RAPID_FIRE] },
+          { name: "p1-2", attacks: [ATTACK.SPREAD, ATTACK.STAFF, ATTACK.DOME_BLAST] },
           { name: "p1-3", attacks: [ATTACK.SLAM, ATTACK.PROJECTILE, ATTACK.SPREAD] },
-          { name: "p1-4", attacks: [ATTACK.SWEEP, ATTACK.PROJECTILE] },
+          { name: "p1-4", attacks: [ATTACK.LEAP, ATTACK.PROJECTILE, ATTACK.RAPID_FIRE] },
           { name: "p1-5", attacks: [ATTACK.BARRAGE, ATTACK.SLAM] }
         ];
     let options = templates.filter((template) => template.name !== this.lastComboName);
@@ -1406,7 +1536,7 @@ export class DarkSoulsGame {
     const targetCount = phaseTwo ? Math.floor(randomBetween(3, Math.min(6, attacks.length + 1))) : Math.floor(randomBetween(2, Math.min(4, attacks.length + 1)));
     return attacks.slice(0, targetCount).map((attack) => ({
       attack,
-      gap: phaseTwo ? randomBetween(0.4, 0.9) : randomBetween(0.8, 1.4)
+      gap: randomBetween(1, phaseTwo ? 4.4 : 5)
     }));
   }
 
@@ -1416,10 +1546,13 @@ export class DarkSoulsGame {
     this.boss.state = attack;
     this.boss.attackHit = false;
     this.boss.tripleShots = 0;
+    this.boss.rapidShots = 0;
+    this.boss.rapidTimer = 0;
     if (attack === ATTACK.SLAM) this.boss.stateTime = telegraph + 0.38;
     if (attack === ATTACK.PROJECTILE) this.boss.stateTime = telegraph + 0.2;
     if (attack === ATTACK.SPREAD) this.boss.stateTime = telegraph + 0.2;
     if (attack === ATTACK.SWEEP) this.boss.stateTime = telegraph + 0.7;
+    if (attack === ATTACK.STAFF) this.boss.stateTime = phaseTwo ? 0.76 : 0.94;
     if (attack === ATTACK.DASH_SLAM) {
       this.boss.stateTime = telegraph + 0.62;
       const targetPillar = this.pickPillarTarget();
@@ -1428,6 +1561,23 @@ export class DarkSoulsGame {
     }
     if (attack === ATTACK.TRIPLE_PROJECTILE) this.boss.stateTime = telegraph + 0.9;
     if (attack === ATTACK.BARRAGE) this.boss.stateTime = phaseTwo ? 1.65 : 1.9;
+    if (attack === ATTACK.RAPID_FIRE) {
+      this.boss.stateTime = 10.45;
+      this.setMessage("The Warlock opens a machine storm.");
+    }
+    if (attack === ATTACK.DOME_BLAST) {
+      this.boss.stateTime = 2.45;
+      this.castDomeCharge();
+      this.setMessage("The air bends inward.");
+    }
+    if (attack === ATTACK.LEAP) {
+      this.boss.stateTime = phaseTwo ? 1.72 : 1.95;
+      this.boss.leapHeight = 0;
+      this.boss.leapFollowup = Math.random() < 0.5 ? ATTACK.STAFF : ATTACK.TRIPLE_PROJECTILE;
+      this.boss.dashDirection.copy(this.player.position).sub(this.boss.position).setY(0);
+      if (this.boss.dashDirection.lengthSq() > 0.001) this.boss.dashDirection.normalize();
+      this.setMessage("The Warlock leaves the ground.");
+    }
     if (attack === ATTACK.CHAIN) {
       this.boss.stateTime = 0.52;
       this.boss.dashDirection.copy(this.player.position).sub(this.boss.position).setY(0).normalize();
@@ -1439,11 +1589,17 @@ export class DarkSoulsGame {
     const total =
       this.boss.state === ATTACK.SWEEP
         ? 1.05
+        : this.boss.state === ATTACK.RAPID_FIRE
+          ? 10.45
+        : this.boss.state === ATTACK.DOME_BLAST
+          ? 2.45
         : this.boss.state === ATTACK.BARRAGE
           ? this.boss.phase === 2 ? 1.65 : 1.9
           : this.boss.state === ATTACK.CHAIN
             ? 0.52
-        : this.boss.state === "staff"
+        : this.boss.state === ATTACK.LEAP
+          ? this.boss.phase === 2 ? 1.72 : 1.95
+        : this.boss.state === ATTACK.STAFF
           ? this.boss.phase === 2 ? 0.7 : 0.88
           : this.boss.state === ATTACK.DASH_SLAM
             ? this.boss.phase === 2 ? 0.97 : 1.12
@@ -1475,11 +1631,46 @@ export class DarkSoulsGame {
       this.boss.attackHit = true;
       this.castAoe();
     }
-    if (this.boss.state === "staff") {
-      this.boss.group.rotation.z = Math.sin(progress * Math.PI) * 0.18;
+    if (this.boss.state === ATTACK.STAFF) {
+      this.animateBossStaffStrike(progress);
       if (progress > 0.58 && !this.boss.attackHit) {
         this.boss.attackHit = true;
         this.resolveStaffStrike();
+      }
+    }
+    if (this.boss.state === ATTACK.RAPID_FIRE) {
+      this.boss.group.rotation.z = Math.sin(progress * Math.PI * 12) * 0.04;
+      this.boss.rapidTimer -= dt;
+      while (this.boss.rapidShots < 100 && this.boss.rapidTimer <= 0) {
+        this.boss.rapidShots += 1;
+        this.boss.rapidTimer += 0.1;
+        this.castRapidProjectile(this.boss.rapidShots);
+      }
+    }
+    if (this.boss.state === ATTACK.DOME_BLAST) {
+      this.boss.group.scale.setScalar(1 + progress * 0.22 + Math.sin(progress * Math.PI * 18) * 0.035);
+      this.groundShake = Math.max(this.groundShake, progress * 0.28);
+      if (progress > 0.72 && !this.boss.attackHit) {
+        this.boss.attackHit = true;
+        this.resolveDomeBlast();
+      }
+    }
+    if (this.boss.state === ATTACK.LEAP) {
+      const rising = progress < 0.38;
+      const leapArc = rising
+        ? easeOut(progress / 0.38)
+        : Math.pow(Math.max(0, 1 - (progress - 0.38) / 0.62), 2.35);
+      this.boss.leapHeight = leapArc * 24;
+      this.boss.group.rotation.x = -leapArc * 0.42;
+      if (progress > 0.12 && progress < 0.5) {
+        this.boss.position.addScaledVector(this.boss.dashDirection, (this.boss.phase === 2 ? 8.8 : 7.2) * dt);
+        this.boss.position.x = clamp(this.boss.position.x, -ARENA.halfSize + 2, ARENA.halfSize - 2);
+        this.boss.position.z = clamp(this.boss.position.z, -ARENA.halfSize + 2, ARENA.halfSize - 2);
+      }
+      if (progress > 0.91 && !this.boss.attackHit) {
+        this.boss.attackHit = true;
+        this.boss.leapHeight = 0;
+        this.resolveLeapLanding();
       }
     }
     if (this.boss.state === ATTACK.BARRAGE) {
@@ -1517,10 +1708,18 @@ export class DarkSoulsGame {
       }
 
     if (this.boss.stateTime <= 0) {
+      const cameFromLeap = this.boss.state === ATTACK.LEAP;
+      const followup = this.boss.leapFollowup;
       this.boss.state = "idle";
+      this.boss.leapHeight = 0;
+      this.boss.leapFollowup = null;
       this.boss.group.scale.setScalar(1);
       this.boss.group.rotation.z = 0;
       this.boss.group.rotation.x = 0;
+      this.resetBossWeaponPose();
+      if (cameFromLeap && followup && this.boss.hp > 0 && !this.ended) {
+        this.startBossPrimitive(followup, this.player.position.distanceTo(this.boss.position));
+      }
     }
   }
 
@@ -1534,18 +1733,186 @@ export class DarkSoulsGame {
     this.breakPillarsInBox(this.getBossBox().expandByScalar(isDash ? 2.2 : 1.5));
   }
 
+  resolveLeapLanding() {
+    this.shake = Math.max(this.shake, 0.9);
+    this.groundShake = Math.max(this.groundShake, 1.2);
+    this.chromaticFlash = Math.max(this.chromaticFlash, 0.42);
+    this.audio.leapExplosion();
+    this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 0.25, 0)), 34, 0xffb252);
+    this.breakPillarsInBox(this.getBossBox().expandByScalar(3.2));
+
+    const distance = this.player.position.distanceTo(this.boss.position);
+    if (distance < 8.5) {
+      const away = this.player.position.clone().sub(this.boss.position).setY(0);
+      if (away.lengthSq() < 0.001) away.set(0, 0, 1);
+      away.normalize();
+      this.player.knockback.addScaledVector(away, 18 + (8.5 - distance) * 1.2);
+      this.player.verticalVelocity = 11.6;
+      this.player.airHeight = Math.max(this.player.airHeight, 0.45);
+      this.player.grounded = false;
+      this.damagePlayer(16, "leap");
+      this.setMessage("The landing throws you skyward.");
+    } else {
+      this.setMessage("The earth buckles under the Warlock.");
+    }
+  }
+
+  animateBossStaffStrike(progress) {
+    const staff = this.boss.group.getObjectByName("bossStaff");
+    const rightArm = this.boss.group.getObjectByName("bossRightArm");
+    if (!staff) return;
+    const windup = progress < 0.46 ? progress / 0.46 : 1;
+    const release = progress < 0.46 ? 0 : (progress - 0.46) / 0.54;
+    const snap = progress < 0.46 ? windup * 0.35 : 0.35 + Math.pow(release, 0.32) * 0.95;
+    staff.position.set(1.1 - snap * 0.25, 1.75, -0.15 - Math.sin(snap * Math.PI) * 1.35);
+    staff.rotation.x = -1.05 * Math.sin(snap * Math.PI);
+    staff.rotation.z = -0.55 + snap * 1.05;
+    if (rightArm) {
+      rightArm.rotation.x = -0.8 * Math.sin(snap * Math.PI);
+      rightArm.rotation.z = -0.35 + snap * 0.5;
+    }
+    this.boss.group.rotation.z = Math.sin(progress * Math.PI) * 0.18;
+  }
+
+  resetBossWeaponPose() {
+    const staff = this.boss.group.getObjectByName("bossStaff");
+    const rightArm = this.boss.group.getObjectByName("bossRightArm");
+    if (staff) {
+      staff.position.set(1.25, 1.75, 0.1);
+      staff.rotation.set(0, 0, -0.08);
+    }
+    if (rightArm) {
+      rightArm.position.set(0.82, 1.95, 0.02);
+      rightArm.rotation.set(0, 0, -0.18);
+    }
+  }
+
   resolveStaffStrike() {
-    const staffArcCenter = this.boss.position.clone().add(this.player.position.clone().sub(this.boss.position).setY(0).normalize().multiplyScalar(2.6));
-    this.spawnParticles(staffArcCenter.clone().add(new THREE.Vector3(0, 0.8, 0)), 18, 0xffd36b);
+    const staff = this.boss.group.getObjectByName("bossStaff");
+    const staffBox = staff ? new THREE.Box3().setFromObject(staff).expandByScalar(0.62) : this.getBossBox().expandByScalar(1.2);
+    const staffCenter = staffBox.getCenter(new THREE.Vector3());
+    this.spawnParticles(staffCenter.clone(), 18, 0xffd36b);
     this.shake = Math.max(this.shake, 0.26);
     this.groundShake = Math.max(this.groundShake, 0.3);
-    const strikeBox = new THREE.Box3().setFromCenterAndSize(
-      staffArcCenter.add(new THREE.Vector3(0, 1.0, 0)),
-      new THREE.Vector3(3.4, 2.1, 3.4)
-    );
-    if (strikeBox.intersectsBox(this.getPlayerBox())) {
+    if (staffBox.intersectsBox(this.getPlayerBox())) {
       this.damagePlayer(20, "staff");
+      const away = this.player.position.clone().sub(this.boss.position).setY(0);
+      if (away.lengthSq() < 0.001) away.set(0, 0, 1);
+      this.player.knockback.addScaledVector(away.normalize(), 20);
+      this.player.verticalVelocity = Math.max(this.player.verticalVelocity, 8.5);
+      this.player.grounded = false;
     }
+  }
+
+  makeProjectileMesh(type) {
+    let geometry;
+    if (type.shape === "cone") {
+      geometry = new THREE.ConeGeometry(type.size * 0.62, type.size * 2.2, 8);
+    } else if (type.shape === "octa") {
+      geometry = new THREE.OctahedronGeometry(type.size, 0);
+    } else if (type.shape === "box") {
+      geometry = new THREE.BoxGeometry(type.size * 1.5, type.size * 1.5, type.size * 1.5);
+    } else {
+      geometry = new THREE.SphereGeometry(type.size, 14, 10);
+    }
+    const mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({
+        color: type.color,
+        emissive: type.emissive,
+        emissiveIntensity: 2.1,
+        roughness: 0.36,
+        metalness: 0.05
+      })
+    );
+    mesh.userData.projectileType = type.name;
+    this.enableBloom(mesh);
+    return mesh;
+  }
+
+  pushProjectile({ mesh, direction, speed, life = 4, damage = BOSS.projectileDamage, spin = 0, homing = false, turnRate = 0 }) {
+    this.scene.add(mesh);
+    this.projectiles.push({
+      mesh,
+      direction,
+      speed,
+      life,
+      damage,
+      spin,
+      homing,
+      turnRate
+    });
+  }
+
+  castRapidProjectile(shot) {
+    if (shot % 6 === 1) this.audio.projectileSpawn();
+    const seekerType = PROJECTILE_TYPES.find((projectile) => projectile.homing);
+    const type = shot % 9 === 0 && seekerType ? seekerType : PROJECTILE_TYPES[(shot - 1) % PROJECTILE_TYPES.length];
+    const start = this.boss.position.clone().add(new THREE.Vector3(
+      randomBetween(-0.38, 0.38),
+      randomBetween(1.35, 2.35),
+      randomBetween(-0.22, 0.22)
+    ));
+    const aim = this.player.position.clone().add(new THREE.Vector3(
+      randomBetween(-2.2, 2.2),
+      randomBetween(0.25, 1.5),
+      randomBetween(-2.2, 2.2)
+    ));
+    const direction = aim.sub(start).normalize();
+    const mesh = this.makeProjectileMesh(type);
+    mesh.position.copy(start);
+    if (type.shape === "cone") mesh.quaternion.setFromUnitVectors(UP, direction);
+    this.pushProjectile({
+      mesh,
+      direction,
+      speed: type.speed + randomBetween(-1.2, 2.2) + (this.boss.phase === 2 ? 2 : 0),
+      life: type.homing ? 4.4 : 3.4,
+      damage: type.damage,
+      spin: randomBetween(5, 13),
+      homing: Boolean(type.homing),
+      turnRate: type.homing ? 1.9 : 0
+    });
+  }
+
+  resolveDomeBlast() {
+    const radius = 14;
+    this.shake = Math.max(this.shake, 1.15);
+    this.groundShake = Math.max(this.groundShake, 1.4);
+    this.chromaticFlash = Math.max(this.chromaticFlash, 0.58);
+    this.audio.domeDetonate();
+    this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 60, 0xd8f5ff);
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 36, 18, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        color: 0xcff8ff,
+        transparent: true,
+        opacity: 0.34,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    dome.position.copy(this.boss.position);
+    dome.position.y = 0.06;
+    this.enableBloom(dome);
+    this.scene.add(dome);
+    this.projectiles.push({
+      mesh: dome,
+      direction: new THREE.Vector3(),
+      speed: 0,
+      life: 0.75,
+      dome: true,
+      maxLife: 0.75
+    });
+
+    const distance = this.player.position.distanceTo(this.boss.position);
+    if (distance <= radius) {
+      this.player.verticalVelocity = Math.max(this.player.verticalVelocity, 13);
+      this.player.airHeight = Math.max(this.player.airHeight, 0.35);
+      this.player.grounded = false;
+      this.damagePlayer(32, "dome");
+      this.setMessage("The dome detonates.");
+    }
+    this.breakPillarsInBox(this.getBossBox().expandByScalar(radius));
   }
 
   castOrb() {
@@ -1553,25 +1920,17 @@ export class DarkSoulsGame {
     this.audio.projectileSpawn();
     const start = this.boss.position.clone().add(new THREE.Vector3(0, 1.7, 0));
     const direction = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)).sub(start).normalize();
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 18, 12),
-      new THREE.MeshStandardMaterial({
-        color: 0xff583d,
-        emissive: 0xff2a00,
-        emissiveIntensity: 2.2,
-        roughness: 0.38
-      })
-    );
+    const mesh = this.makeProjectileMesh(PROJECTILE_TYPES[0]);
     mesh.position.copy(start);
-    this.enableBloom(mesh);
     const light = new THREE.PointLight(0xff4a20, 1.1, 6);
     mesh.add(light);
-    this.scene.add(mesh);
-    this.projectiles.push({
+    this.pushProjectile({
       mesh,
       direction,
       speed: this.boss.phase === 2 ? 9.2 : 6.2,
-      life: 4
+      life: 4,
+      damage: BOSS.projectileDamage,
+      spin: 5
     });
   }
 
@@ -1581,23 +1940,16 @@ export class DarkSoulsGame {
     const base = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)).sub(start).normalize();
     for (const angle of [-Math.PI / 12, 0, Math.PI / 12]) {
       const direction = base.clone().applyAxisAngle(UP, angle).normalize();
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.24, 18, 12),
-        new THREE.MeshStandardMaterial({
-          color: 0xff704d,
-          emissive: 0xff2a00,
-          emissiveIntensity: 2,
-          roughness: 0.38
-        })
-      );
+      const type = PROJECTILE_TYPES[1 + Math.floor(Math.random() * 4)];
+      const mesh = this.makeProjectileMesh(type);
       mesh.position.copy(start);
-      this.enableBloom(mesh);
-      this.scene.add(mesh);
-      this.projectiles.push({
+      this.pushProjectile({
         mesh,
         direction,
         speed: this.boss.phase === 2 ? 9.6 : 6.8,
-        life: 4
+        life: 4,
+        damage: type.damage,
+        spin: 7
       });
     }
   }
@@ -1622,6 +1974,32 @@ export class DarkSoulsGame {
       aoe: true,
       radius: 0.8,
       hit: false
+    });
+  }
+
+  castDomeCharge() {
+    this.audio.powerCharge(2.35);
+    const charge = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        color: 0x9eefff,
+        transparent: true,
+        opacity: 0.18,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    charge.position.copy(this.boss.position);
+    charge.position.y = 0.08;
+    this.enableBloom(charge);
+    this.scene.add(charge);
+    this.projectiles.push({
+      mesh: charge,
+      direction: new THREE.Vector3(),
+      speed: 0,
+      life: 2.45,
+      maxLife: 2.45,
+      chargeDome: true
     });
   }
 
@@ -1672,7 +2050,13 @@ export class DarkSoulsGame {
     const direction = target.sub(start).normalize();
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.08, 0.08, 1, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2b2a2f, metalness: 0.35, roughness: 0.55 })
+      new THREE.MeshStandardMaterial({
+        color: 0xf5f7ff,
+        emissive: 0xdce8ff,
+        emissiveIntensity: 0.45,
+        metalness: 0.25,
+        roughness: 0.42
+      })
     );
     mesh.position.copy(start);
     this.enableBloom(mesh);
@@ -1701,8 +2085,28 @@ export class DarkSoulsGame {
           projectile.hit = true;
           this.damagePlayer(22, "aoe");
         }
+      } else if (projectile.dome) {
+        const fade = Math.max(0, projectile.life / projectile.maxLife);
+        projectile.mesh.material.opacity = fade * 0.34;
+        projectile.mesh.scale.setScalar(1 + (1 - fade) * 0.18);
+      } else if (projectile.chargeDome) {
+        const progress = 1 - Math.max(0, projectile.life / projectile.maxLife);
+        projectile.mesh.position.copy(this.boss.position);
+        projectile.mesh.position.y = 0.08;
+        projectile.mesh.scale.setScalar(2 + progress * 12 + Math.sin(this.clock.elapsedTime * 26) * 0.25);
+        projectile.mesh.material.opacity = 0.08 + progress * 0.2;
       } else {
+        if (projectile.homing && !projectile.deflected) {
+          const target = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0));
+          const desired = target.sub(projectile.mesh.position).normalize();
+          projectile.direction.lerp(desired, clamp(projectile.turnRate * dt, 0, 1)).normalize();
+          projectile.mesh.scale.setScalar(1 + Math.sin(this.clock.elapsedTime * 16) * 0.12);
+        }
         projectile.mesh.position.addScaledVector(projectile.direction, projectile.speed * dt);
+        if (projectile.spin) {
+          projectile.mesh.rotation.x += projectile.spin * dt;
+          projectile.mesh.rotation.z += projectile.spin * 0.73 * dt;
+        }
         if (projectile.sky) {
           projectile.marker.material.opacity = Math.max(0, projectile.life / 2.6) * 0.55;
           if (projectile.mesh.position.y <= 0.35) {
@@ -1736,7 +2140,7 @@ export class DarkSoulsGame {
           this.deflectProjectile(projectile);
         } else if (projectileBox.intersectsBox(this.getPlayerBox())) {
           projectile.life = 0;
-          this.damagePlayer(BOSS.projectileDamage, "projectile");
+          this.damagePlayer(projectile.damage || BOSS.projectileDamage, "projectile");
           this.spawnParticles(projectile.mesh.position.clone(), 8, 0xff7a35);
         }
       }
@@ -1775,7 +2179,13 @@ export class DarkSoulsGame {
       this.player.stamina = Math.max(0, this.player.stamina - 16);
       this.setMessage("Blocked, but the impact bites.");
     } else {
-      this.setMessage(source === "projectile" ? "Arcane fire finds you." : "Crushed by the Warlock's strike.");
+      this.setMessage(
+        source === "projectile"
+          ? "Arcane fire finds you."
+          : source === "dome"
+            ? "The blast tears the ground away."
+            : "Crushed by the Warlock's strike."
+      );
     }
     this.player.hp = Math.max(0, this.player.hp - amount);
     this.player.invincible = 0.5;
@@ -1785,7 +2195,7 @@ export class DarkSoulsGame {
     const away = this.player.position.clone().sub(this.boss.position).setY(0);
     if (away.lengthSq() < 0.001) away.set(0, 0, 1);
     away.normalize();
-    const force = source === "projectile" ? 13 : source === "aoe" ? 18 : 22;
+    const force = source === "dome" ? 100 : source === "projectile" ? 13 : source === "aoe" ? 18 : 22;
     this.player.knockback.addScaledVector(away, force);
     this.shake = 0.42;
     this.spawnDamageOutline();
@@ -1945,6 +2355,8 @@ export class DarkSoulsGame {
     projectile.speed = Math.max(projectile.speed, 12.5);
     projectile.life = Math.max(projectile.life, 1.2);
     projectile.deflected = true;
+    projectile.homing = false;
+    projectile.turnRate = 0;
     projectile.mesh.material.color.set(0xfff08a);
     projectile.mesh.material.emissive?.set(0xffd34f);
     this.spawnParticles(projectile.mesh.position.clone(), 12, 0xffe66d);
@@ -1962,6 +2374,35 @@ export class DarkSoulsGame {
     rightLeg.rotation.x = -stride;
     leftLeg.position.z = moving ? Math.sin(elapsed * 12) * 0.07 : 0;
     rightLeg.position.z = moving ? -Math.sin(elapsed * 12) * 0.07 : 0;
+  }
+
+  updateBossLimbAnimation(dt, elapsed, distanceToPlayer) {
+    const leftLeg = this.boss.group.getObjectByName("bossLeftLeg");
+    const rightLeg = this.boss.group.getObjectByName("bossRightLeg");
+    const leftArm = this.boss.group.getObjectByName("bossLeftArm");
+    const rightArm = this.boss.group.getObjectByName("bossRightArm");
+    const moving = this.boss.state === "idle" && distanceToPlayer > 5.2 && this.boss.stagger <= 0;
+    const limp = moving ? Math.sin(elapsed * 4.6) : 0;
+
+    if (leftLeg) {
+      leftLeg.position.set(-0.38, 0.45, 0.12 + Math.max(0, limp) * 0.08);
+      leftLeg.rotation.x = 0.22 + limp * 0.22;
+      leftLeg.rotation.z = Math.sin(elapsed * 2.4) * 0.06;
+    }
+    if (rightLeg) {
+      rightLeg.position.set(0.38, 0.32, -0.22 - Math.abs(limp) * 0.16);
+      rightLeg.rotation.x = -0.68 - Math.abs(limp) * 0.42;
+      rightLeg.rotation.z = -0.13 + Math.sin(elapsed * 3.2) * 0.04;
+    }
+    if (leftArm) {
+      leftArm.rotation.x = moving ? -limp * 0.18 : 0;
+      leftArm.rotation.z = 0.24 + Math.sin(elapsed * 2.1) * 0.04;
+    }
+    if (rightArm && this.boss.state !== ATTACK.STAFF) {
+      rightArm.position.set(0.82, 1.95, 0.02);
+      rightArm.rotation.x = moving ? limp * 0.15 : 0;
+      rightArm.rotation.z = -0.18 + Math.sin(elapsed * 2.4) * 0.04;
+    }
   }
 
   updatePlayerDamageOutline() {
