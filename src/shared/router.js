@@ -2,6 +2,7 @@ import { games, getGameByPath } from "./games.js";
 import { createShell, renderNotFound } from "./layout.js";
 
 let activeCleanup = null;
+let routeVersion = 0;
 
 function cleanupCurrentPage() {
   if (typeof activeCleanup === "function") {
@@ -55,8 +56,9 @@ export function navigateTo(path) {
   renderRoute();
 }
 
-export function renderRoute() {
+export async function renderRoute() {
   cleanupCurrentPage();
+  const version = (routeVersion += 1);
 
   const app = document.querySelector("#app");
   const { pathname } = window.location;
@@ -66,7 +68,19 @@ export function renderRoute() {
   if (pathname === "/") {
     page = renderHome();
   } else if (game) {
-    const result = game.render();
+    const { shell, main } = createShell({ title: game.title, showHomeLink: true });
+    main.innerHTML = `
+      <section class="empty-state">
+        <p class="eyebrow">Loading</p>
+        <h1>${game.title}</h1>
+        <p>Lighting the torches...</p>
+      </section>
+    `;
+    app.replaceChildren(shell);
+
+    const renderGame = await game.load();
+    if (version !== routeVersion) return;
+    const result = renderGame();
     page = result.element;
     activeCleanup = result.cleanup;
   } else {

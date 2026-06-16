@@ -1,5 +1,6 @@
 import { createShell } from "../../shared/layout.js";
 import { TetrisGame } from "./tetris.js";
+import "./tetris.css";
 
 export function renderTetrisPage() {
   const { shell, main } = createShell({ title: "Tetris", showHomeLink: true });
