@@ -1,0 +1,49 @@
+@media (max-width: 860px) {
+  .souls-stage {
+    min-height: 620px;
+  }
+
+  .souls-canvas {
+    height: 620px;
+  }
+
+  .souls-controls {
+    right: 14px;
+    width: 220px;
+  }
+
+  .souls-message {
+    bottom: 116px;
+  }
+}
+
+@media (max-width: 640px) {
+  .souls-stage {
+    min-height: 700px;
+  }
+
+  .souls-canvas {
+    height: 700px;
+  }
+
+  .souls-controls {
+    right: 14px;
+    bottom: 96px;
+    left: 14px;
+    width: auto;
+  }
+
+  .player-hud {
+    right: 18px;
+    bottom: 22px;
+    width: auto;
+  }
+
+  .souls-message {
+    bottom: 300px;
+  }
+
+  .weapon-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}

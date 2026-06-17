@@ -39,13 +39,6 @@ function renderHome() {
     </section>
     <section class="game-grid" aria-label="Games">
       ${cards}
-      <article class="game-card game-card--soon" aria-label="More games coming soon">
-        <span class="game-card__icon" aria-hidden="true">＋</span>
-        <span class="game-card__copy">
-          <strong>Next up</strong>
-          <span>Drop another game module into the hub when inspiration hits.</span>
-        </span>
-      </article>
     </section>
   `;
 
