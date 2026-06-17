@@ -61,6 +61,7 @@
 }
 
 .souls-bar {
+  position: relative;
   height: 18px;
   overflow: hidden;
   border: 1px solid rgba(224, 207, 176, 0.3);
@@ -71,12 +72,19 @@
   box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.75);
 }
 
-.souls-bar i {
+.souls-bar i,
+.souls-bar b {
   display: block;
   width: 100%;
   height: 100%;
   transform-origin: left center;
   transition: width 150ms ease;
+}
+
+.souls-bar b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  pointer-events: none;
 }
 
 .souls-bar--boss {
@@ -85,6 +93,11 @@
 
 .souls-bar--boss i {
   background: linear-gradient(90deg, #50130e, #c93a24);
+}
+
+.souls-bar--boss b {
+  background: linear-gradient(90deg, rgba(55, 199, 255, 0.92), rgba(195, 242, 255, 0.92));
+  box-shadow: 0 0 16px rgba(55, 199, 255, 0.5);
 }
 
 .souls-bar--hp i {

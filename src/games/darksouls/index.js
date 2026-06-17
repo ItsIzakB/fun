@@ -34,7 +34,10 @@ export function renderDarkSoulsPage() {
         <div class="souls-hud" aria-hidden="false">
           <div class="boss-hud">
             <span>${BOSS_NAME}</span>
-            <div class="souls-bar souls-bar--boss"><i data-boss-hp></i></div>
+            <div class="souls-bar souls-bar--boss">
+              <i data-boss-hp></i>
+              <b data-boss-shield></b>
+            </div>
           </div>
 
           <div class="player-hud">
@@ -76,6 +79,7 @@ export function renderDarkSoulsPage() {
     hpBar: main.querySelector("[data-player-hp]"),
     staminaBar: main.querySelector("[data-player-stamina]"),
     bossHpBar: main.querySelector("[data-boss-hp]"),
+    bossShieldBar: main.querySelector("[data-boss-shield]"),
     messageEl: main.querySelector("[data-souls-message]"),
     endScreen: main.querySelector("[data-souls-end]"),
     endTitle: main.querySelector("[data-souls-end-title]"),

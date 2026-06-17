@@ -3,7 +3,7 @@ export const BOSS_NAME = "The Ashen Warlock";
 export const PLAYER = {
   maxHp: 120,
   maxStamina: 100,
-  speed: 7.2,
+  speed: 6.4,
   dodgeSpeed: 15,
   dodgeTime: 0.42,
   invincibleTime: 0.42,
@@ -19,8 +19,10 @@ export const PLAYER = {
 
 export const WEAPONS = {
   great: {
-    label: "Great blade",
-    description: "Long reach and brutal impact, but slow and costly.",
+    label: "Cinder Greatblade",
+    description: "Heavy reach with a charged red flame line that grows with the hold.",
+    id: "great",
+    special: "flame",
     bladeScale: 1.38,
     lightDamage: 42,
     heavyDamage: 92,
@@ -36,8 +38,10 @@ export const WEAPONS = {
     heavyReach: 3.75
   },
   arming: {
-    label: "Arming sword",
-    description: "Balanced reach, speed, stamina cost, and damage.",
+    label: "Azure Needle",
+    description: "Balanced steel that releases fast blue bolts. Hold to fire more.",
+    id: "arming",
+    special: "needle",
     bladeScale: 1,
     lightDamage: 30,
     heavyDamage: 70,
@@ -53,8 +57,10 @@ export const WEAPONS = {
     heavyReach: 3
   },
   short: {
-    label: "Short fang",
-    description: "Fast and cheap, but demands close range.",
+    label: "Sun Fang",
+    description: "Fast short blade with a charged golden close-range slash.",
+    id: "short",
+    special: "slash",
     bladeScale: 0.68,
     lightDamage: 20,
     heavyDamage: 48,
@@ -73,10 +79,11 @@ export const WEAPONS = {
 
 export const BOSS = {
   maxHp: 520,
+  maxShield: 150,
   radius: 1.15,
-  meleeDamage: 25,
+  meleeDamage: 30,
   projectileDamage: 15,
-  meleeRange: 2.25,
+  meleeRange: 2.75,
   staggerTime: 1.5,
   phaseTwoThreshold: 0.5
 };

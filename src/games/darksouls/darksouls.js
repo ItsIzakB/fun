@@ -249,6 +249,12 @@ class ProceduralAudio {
   lightHit() { this.oscillatorHit("sawtooth", 180, 0.15, 3); }
   heavyHit() { this.oscillatorHit("square", 90, 0.25, 7); }
   damage(low = false) { this.noise(0.2, low ? 240 : 400, 0.22); }
+  clank() {
+    if (!this.ensure()) return;
+    this.oscillatorHit("square", 520, 0.09, 8);
+    setTimeout(() => this.oscillatorHit("triangle", 1180, 0.08, 2), 22);
+    this.noise(0.08, 2200, 0.12);
+  }
   pillarBreak() { this.oscillatorHit("triangle", 60, 0.8, 2); this.noise(0.5, 120, 0.16); }
   projectileSpawn() {
     if (!this.ensure()) return;
@@ -387,6 +393,7 @@ export class DarkSoulsGame {
     hpBar,
     staminaBar,
     bossHpBar,
+    bossShieldBar,
     messageEl,
     endScreen,
     endTitle,
@@ -401,6 +408,7 @@ export class DarkSoulsGame {
     this.hpBar = hpBar;
     this.staminaBar = staminaBar;
     this.bossHpBar = bossHpBar;
+    this.bossShieldBar = bossShieldBar;
     this.messageEl = messageEl;
     this.endScreen = endScreen;
     this.endTitle = endTitle;
@@ -792,7 +800,22 @@ export class DarkSoulsGame {
     hilt.name = "hilt";
     hilt.position.set(0, 0, -0.08);
     swordPivot.add(hilt, blade);
-    group.add(body, head, rightShoulder, leftShoulder, leftLeg, rightLeg, leftArm, rightArm, swordPivot);
+    const guard = new THREE.Mesh(
+      new THREE.CircleGeometry(0.82, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0xd7ecff,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    guard.name = "playerGuard";
+    guard.position.set(0, 1.05, -0.72);
+    guard.rotation.y = Math.PI;
+    guard.visible = false;
+    this.enableBloom(guard);
+    group.add(body, head, rightShoulder, leftShoulder, leftLeg, rightLeg, leftArm, rightArm, swordPivot, guard);
     group.traverse((object) => {
       object.castShadow = true;
     });
@@ -865,9 +888,23 @@ export class DarkSoulsGame {
       })
     );
     ember.position.set(1.25, 3.58, 0.1);
+    const shield = new THREE.Mesh(
+      new THREE.CircleGeometry(2.7, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x7edbff,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    shield.name = "bossShield";
+    shield.position.set(0, 1.65, 1.35);
+    shield.visible = false;
     this.enableBloom(ember);
     this.enableBloom(head);
-    group.add(leftLeg, rightLeg, robe, shoulders, head, leftArm, rightArm, staff, ember);
+    this.enableBloom(shield);
+    group.add(leftLeg, rightLeg, robe, shoulders, head, leftArm, rightArm, staff, ember, shield);
     group.traverse((object) => {
       object.castShadow = true;
       object.receiveShadow = true;
@@ -905,6 +942,8 @@ export class DarkSoulsGame {
       blockTime: 99,
       hitDone: false,
       heavyQueued: false,
+      slow: 0,
+      guardFlash: 0,
       damageFlash: 0,
       inputDir: new THREE.Vector3(0, 0, -1)
     };
@@ -916,6 +955,7 @@ export class DarkSoulsGame {
       position: new THREE.Vector3(0, 0, -10),
       knockback: new THREE.Vector3(),
       hp: BOSS.maxHp,
+      guardHp: BOSS.maxShield,
       phase: 1,
       state: "idle",
       stateTime: 1.2,
@@ -927,6 +967,11 @@ export class DarkSoulsGame {
       dashDirection: new THREE.Vector3(),
       leapHeight: 0,
       leapFollowup: null,
+      shield: 0,
+      shieldCooldown: 0,
+      shieldHits: 0,
+      shieldWarn: 0,
+      phaseTransition: 0,
       stagger: 0,
       flash: 0
     };
@@ -1053,11 +1098,13 @@ export class DarkSoulsGame {
         this.player.charging = 0;
         return;
       }
+      const chargeTime = this.player.charging;
       if (this.player.charging > 0.42) {
         this.startAttack("heavy");
       } else {
         this.startAttack("light");
       }
+      if (!this.ended && chargeTime > 0.18) this.releaseWeaponSpecial(chargeTime);
       this.player.charging = 0;
     }
   }
@@ -1091,6 +1138,11 @@ export class DarkSoulsGame {
     }
     this.player.group.position.copy(this.player.position);
     this.boss.group.position.copy(this.boss.position);
+    const shield = this.boss.group.getObjectByName("bossShield");
+    if (shield) {
+      shield.visible = false;
+      shield.material.opacity = 0;
+    }
     this.projectiles.forEach((projectile) => {
       this.scene.remove(projectile.mesh);
       if (projectile.marker) this.scene.remove(projectile.marker);
@@ -1134,12 +1186,13 @@ export class DarkSoulsGame {
     }
 
     const chargeSlow = this.player.charging > 0 ? 0.38 : 1;
+    const slowFactor = this.player.slow > 0 ? 0.38 : 1;
     if (this.player.rolling > 0) {
       this.player.rolling -= dt;
       this.player.invincible = Math.max(this.player.invincible, this.player.rolling);
-      this.movePlayer(this.player.inputDir, PLAYER.dodgeSpeed * dt);
+      this.movePlayer(this.player.inputDir, PLAYER.dodgeSpeed * slowFactor * dt);
     } else {
-      this.movePlayer(move, PLAYER.speed * chargeSlow * dt);
+      this.movePlayer(move, PLAYER.speed * chargeSlow * slowFactor * dt);
     }
     if (this.player.rolling <= 0) {
       this.player.rollLean = 0;
@@ -1169,6 +1222,8 @@ export class DarkSoulsGame {
     }
 
     this.player.invincible = Math.max(0, this.player.invincible - dt);
+    this.player.slow = Math.max(0, this.player.slow - dt);
+    this.player.guardFlash = Math.max(0, this.player.guardFlash - dt);
     this.player.damageFlash = Math.max(0, this.player.damageFlash - dt);
     this.player.attacking = Math.max(0, this.player.attacking - dt);
     this.player.attackCooldown = Math.max(0, this.player.attackCooldown - dt);
@@ -1182,6 +1237,7 @@ export class DarkSoulsGame {
     this.player.group.rotation.z = this.player.rolling > 0 ? this.player.rollLean * Math.sin((this.player.rolling / PLAYER.dodgeTime) * Math.PI) * 1.05 : 0;
     this.updateSwordAnimation();
     this.updateLegAnimation(move, elapsed);
+    this.updateGuardVisual(elapsed);
     this.updatePlayerDamageOutline();
   }
 
@@ -1295,6 +1351,160 @@ export class DarkSoulsGame {
     this.setMessage(type === "heavy" ? "Heavy swing committed." : "Quick cut.");
   }
 
+  releaseWeaponSpecial(chargeTime) {
+    const charge = clamp(chargeTime / 1.6, 0.2, 1);
+    if (this.weapon.special === "flame") {
+      this.castPlayerFlameLine(charge);
+      return;
+    }
+    if (this.weapon.special === "needle") {
+      this.castPlayerNeedles(charge);
+      this.tryRaiseBossShieldSoon();
+      return;
+    }
+    this.castPlayerSunSlash(charge);
+  }
+
+  playerForward() {
+    return new THREE.Vector3(Math.sin(this.player.facing), 0, Math.cos(this.player.facing)).normalize();
+  }
+
+  castPlayerFlameLine(charge) {
+    const forward = this.playerForward();
+    const count = 5 + Math.floor(charge * 10);
+    for (let i = 0; i < count; i += 1) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.95 + charge * 0.55, 0.16, 1.05),
+        new THREE.MeshBasicMaterial({ color: 0xff2d18, transparent: true, opacity: 0.82 })
+      );
+      mesh.position.copy(this.player.position).addScaledVector(forward, 1.3 + i * 0.92);
+      mesh.position.y = 0.12;
+      mesh.rotation.y = this.player.facing;
+      this.enableBloom(mesh);
+      this.scene.add(mesh);
+      this.projectiles.push({
+        mesh,
+        direction: forward.clone(),
+        speed: 5.2 + charge * 2,
+        life: 0.45 + charge * 0.2,
+        damage: 0.35 + charge * 0.55,
+        owner: "player",
+        playerSpecial: "flame",
+        spin: 0,
+        flameLine: true
+      });
+    }
+    this.audio.heavyHit();
+    this.setMessage("Cinder line released.");
+  }
+
+  castPlayerNeedles(charge) {
+    const forward = this.playerForward();
+    const count = 1 + Math.floor(charge * 5);
+    for (let i = 0; i < count; i += 1) {
+      const angle = (i - (count - 1) / 2) * 0.045;
+      const direction = forward.clone().applyAxisAngle(UP, angle).normalize();
+      const mesh = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.22, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0x55caff,
+          emissive: 0x168cff,
+          emissiveIntensity: 2.6,
+          roughness: 0.28
+        })
+      );
+      mesh.position.copy(this.player.position).add(new THREE.Vector3(0, 1.15, 0)).addScaledVector(direction, 0.9);
+      this.enableBloom(mesh);
+      this.pushProjectile({
+        mesh,
+        direction,
+        speed: 18 + charge * 6,
+        life: 2.8,
+        damage: 16,
+        spin: 12,
+        owner: "player",
+        playerSpecial: "needle",
+        pingPong: true
+      });
+    }
+    this.audio.projectileSpawn();
+    this.setMessage(count === 1 ? "Azure needle fired." : `${count} azure needles fired.`);
+  }
+
+  castPlayerSunSlash(charge) {
+    const forward = this.playerForward();
+    const center = this.player.position.clone().addScaledVector(forward, 1.35 + charge * 0.55);
+    center.y = 1.0;
+    const mesh = new THREE.Mesh(
+      new THREE.TorusGeometry(1.1 + charge * 0.55, 0.055, 8, 48, Math.PI * 1.25),
+      new THREE.MeshBasicMaterial({ color: 0xffea64, transparent: true, opacity: 0.86 })
+    );
+    mesh.position.copy(center);
+    mesh.rotation.set(Math.PI / 2, 0, this.player.facing - Math.PI / 2);
+    this.enableBloom(mesh);
+    this.scene.add(mesh);
+    this.projectiles.push({
+      mesh,
+      direction: forward,
+      speed: 0,
+      life: 0.22,
+      damage: 18 + charge * 24,
+      owner: "player",
+      playerSpecial: "slash",
+      slashRadius: 2.0 + charge * 1.2,
+      hit: false
+    });
+    this.audio.lightHit();
+    this.setMessage("Sun Fang arc.");
+  }
+
+  projectileTouchesBossShield(projectile) {
+    if (this.boss.shield <= 0 || projectile.owner !== "player") return false;
+    const shieldCenter = this.boss.position.clone().add(new THREE.Vector3(0, 1.55, 0));
+    const radius = projectile.playerSpecial === "slash" ? 4.2 : 3.4;
+    return projectile.mesh.position.distanceTo(shieldCenter) < radius;
+  }
+
+  blockPlayerProjectileWithShield(projectile) {
+    this.boss.shieldHits += 1;
+    if (projectile.playerSpecial !== "needle") {
+      projectile.life = 0;
+      this.spawnParticles(projectile.mesh.position.clone(), 14, projectile.playerSpecial === "flame" ? 0xff3b1f : 0xffea64);
+      this.shake = Math.max(this.shake, 0.12);
+      this.setMessage("The mirror shield eats the blow.");
+      if (this.boss.shieldHits >= 30) this.breakBossShield();
+      return;
+    }
+
+    projectile.owner = "boss";
+    projectile.deflected = false;
+    projectile.life = 3.2;
+    projectile.damage = 16;
+    projectile.speed = Math.max(projectile.speed, 17);
+    projectile.direction.copy(
+      this.player.position.clone().add(new THREE.Vector3(0, 0.9, 0)).sub(projectile.mesh.position).normalize()
+    );
+    projectile.mesh.material.color.set(0xff2d24);
+    projectile.mesh.material.emissive?.set(0xff0900);
+    this.spawnParticles(projectile.mesh.position.clone(), 10, 0x55caff);
+    this.shake = Math.max(this.shake, 0.16);
+    this.setMessage("The shield returns the needle.");
+    if (this.boss.shieldHits >= 30) this.breakBossShield();
+  }
+
+  deflectPingPongProjectile(projectile) {
+    projectile.owner = "player";
+    projectile.life = 3.2;
+    projectile.speed = Math.max(projectile.speed, 18);
+    projectile.direction.copy(
+      this.boss.position.clone().add(new THREE.Vector3(0, 1.3, 0)).sub(projectile.mesh.position).normalize()
+    );
+    projectile.mesh.material.color.set(0x55caff);
+    projectile.mesh.material.emissive?.set(0x168cff);
+    this.spawnParticles(projectile.mesh.position.clone(), 12, 0x55caff);
+    this.setMessage("Needle returned.");
+  }
+
   updateSwordAnimation() {
     const sword = this.player.group.getObjectByName("swordPivot");
     if (!sword) return;
@@ -1368,12 +1578,15 @@ export class DarkSoulsGame {
 
     if (this.player.charging > 0) {
       const pulse = 0.9 + Math.sin(this.player.charging * 18) * 0.35;
-      blade.material.color.set(0xffe66d);
-      blade.material.emissive.set(0xffcc22);
+      const charge = clamp(this.player.charging / 1.6, 0, 1);
+      const colors = this.getWeaponChargeColors();
+      const bladeColor = new THREE.Color(colors.dark).lerp(new THREE.Color(colors.light), charge);
+      blade.material.color.copy(bladeColor);
+      blade.material.emissive.copy(bladeColor);
       blade.material.emissiveIntensity = pulse;
       for (const object of this.player.group.children) {
         if (object.material?.emissive && object.name !== "blade" && this.player.damageFlash <= 0) {
-          object.material.emissive.set(0x7a5b00);
+          object.material.emissive.copy(bladeColor);
           object.material.emissiveIntensity = 0.25;
         }
       }
@@ -1390,6 +1603,12 @@ export class DarkSoulsGame {
         }
       }
     }
+  }
+
+  getWeaponChargeColors() {
+    if (this.weapon.special === "flame") return { dark: 0x5c0000, light: 0xff2d24 };
+    if (this.weapon.special === "needle") return { dark: 0x052a75, light: 0x55caff };
+    return { dark: 0x6a5200, light: 0xffea64 };
   }
 
   updateHitboxes(dt) {
@@ -1411,8 +1630,26 @@ export class DarkSoulsGame {
   }
 
   damageBoss(amount, type) {
+    if (this.boss.phaseTransition > 0) {
+      this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.7, 0)), 8, 0xff5b3a);
+      this.setMessage("The Warlock is changing. Steel cannot reach him.");
+      return;
+    }
     if (this.boss.stagger > 0) amount *= 1.15;
-    this.boss.hp = Math.max(0, this.boss.hp - amount);
+    let hpDamage = amount;
+    if (this.boss.guardHp > 0) {
+      const shieldDamage = Math.min(this.boss.guardHp, amount);
+      this.boss.guardHp = Math.max(0, this.boss.guardHp - shieldDamage);
+      hpDamage = Math.max(0, amount - shieldDamage);
+      if (this.boss.guardHp > 0) {
+        this.setMessage("The Warlock's shield absorbs the hit.");
+      } else {
+        this.setMessage("The Warlock's shield breaks.");
+        this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.6, 0)), 32, 0x55caff);
+        this.shake = Math.max(this.shake, 0.36);
+      }
+    }
+    this.boss.hp = Math.max(0, this.boss.hp - hpDamage);
     this.boss.flash = 0.16;
     if (type === "heavy") this.audio.heavyHit();
     else this.audio.lightHit();
@@ -1420,30 +1657,106 @@ export class DarkSoulsGame {
     const away = this.boss.position.clone().sub(this.player.position).setY(0);
     if (away.lengthSq() > 0.001) {
       away.normalize();
-      const force = type === "heavy" ? 8.5 : type === "deflect" ? 10 : 4.8;
+      const force = type === "flame" ? 3.8 : type === "heavy" ? 8.5 : type === "deflect" ? 10 : 4.8;
       this.boss.knockback.addScaledVector(away, force);
     }
-    this.shake = Math.max(this.shake, type === "heavy" || type === "deflect" ? 0.42 : 0.22);
+    this.shake = Math.max(this.shake, type === "heavy" || type === "deflect" || type === "flame" ? 0.42 : 0.22);
     if (this.boss.hp <= 0) {
       this.endFight("victory");
     } else if (this.boss.phase === 1 && this.boss.hp <= BOSS.maxHp * BOSS.phaseTwoThreshold) {
-      this.boss.phase = 2;
-      this.boss.flash = 1.1;
-      this.boss.cooldown = 0.35;
-      this.audio.setPhaseTwo();
-      this.setMessage("The Warlock's embers flare hotter.");
+      this.startPhaseTwoTransition();
     }
+  }
+
+  startPhaseTwoTransition() {
+    this.boss.phase = 2;
+    this.boss.phaseTransition = 3.2;
+    this.boss.flash = 3.2;
+    this.boss.state = "idle";
+    this.boss.stateTime = 0;
+    this.boss.knockback.set(0, 0, 0);
+    this.boss.shield = 0;
+    this.boss.shieldWarn = 0;
+    this.combo = [];
+    this.comboIndex = 0;
+    this.comboTimer = 0;
+    this.comboRecovery = 0.4;
+    this.audio.setPhaseTwo();
+    this.audio.powerCharge(2.6);
+    this.shake = Math.max(this.shake, 0.5);
+    this.groundShake = Math.max(this.groundShake, 0.45);
+    this.setMessage("The Warlock stops. The second flame wakes.");
+  }
+
+  tryRaiseBossShieldSoon() {
+    if (this.boss.shield > 0 || this.boss.shieldCooldown > 0 || this.boss.stagger > 0 || this.ended) return;
+    this.boss.shieldWarn = 0.35;
+    this.setMessage("The Warlock reaches for a mirror shield.");
+  }
+
+  activateBossShield() {
+    if (this.boss.shieldCooldown > 0 || this.boss.shield > 0) return;
+    this.boss.shield = 4.2;
+    this.boss.shieldHits = 0;
+    this.boss.shieldWarn = 0;
+    this.shake = Math.max(this.shake, 0.16);
+    this.audio.parry();
+    this.setMessage("Mirror shield raised.");
+  }
+
+  breakBossShield() {
+    this.boss.shield = 0;
+    this.boss.shieldCooldown = 10;
+    this.boss.shieldHits = 0;
+    this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.6, 0)), 34, 0x55caff);
+    this.shake = Math.max(this.shake, 0.42);
+    this.setMessage("The mirror shield shatters.");
+  }
+
+  updateBossShield(dt) {
+    this.boss.shieldCooldown = Math.max(0, this.boss.shieldCooldown - dt);
+    if (this.boss.shieldWarn > 0) {
+      this.boss.shieldWarn -= dt;
+      if (this.boss.shieldWarn <= 0) this.activateBossShield();
+    }
+    if (this.boss.shield > 0) {
+      this.boss.shield -= dt;
+      if (this.boss.shield <= 0) {
+        this.boss.shield = 0;
+        this.boss.shieldCooldown = 10;
+      }
+    }
+
+    const shield = this.boss.group?.getObjectByName("bossShield");
+    if (!shield) return;
+    const active = this.boss.shield > 0 || this.boss.shieldWarn > 0;
+    shield.visible = active;
+    if (!active) return;
+    const pulse = 0.72 + Math.sin(this.clock.elapsedTime * 12) * 0.16;
+    shield.material.opacity = this.boss.shield > 0 ? pulse : 0.22;
+    shield.scale.setScalar(this.boss.shield > 0 ? 1 : 0.45 + (1 - this.boss.shieldWarn / 0.35) * 0.55);
   }
 
   updateBoss(dt, elapsed) {
     const toPlayer = this.player.position.clone().sub(this.boss.position);
     const targetYaw = Math.atan2(toPlayer.x, toPlayer.z);
-    this.boss.group.rotation.y = approachAngle(this.boss.group.rotation.y, targetYaw, dt * 1.8);
+    this.boss.group.rotation.y = approachAngle(this.boss.group.rotation.y, targetYaw, dt * 9);
     this.boss.group.position.copy(this.boss.position);
     this.boss.group.position.y = this.boss.leapHeight + Math.sin(elapsed * 2.2) * 0.08;
     this.updateBossLimbAnimation(dt, elapsed, toPlayer.length());
+    this.updateBossShield(dt);
 
     this.updateBossFlash(dt);
+    if (this.boss.phaseTransition > 0) {
+      this.boss.phaseTransition = Math.max(0, this.boss.phaseTransition - dt);
+      this.boss.group.scale.setScalar(1 + Math.sin(elapsed * 18) * 0.05 + (this.boss.phaseTransition / 3.2) * 0.18);
+      this.spawnPhaseTransitionSparks(dt);
+      if (this.boss.phaseTransition <= 0) {
+        this.boss.group.scale.setScalar(1);
+        this.setMessage("Phase two. He is faster, but not reckless.");
+      }
+      return;
+    }
     if (this.boss.stagger > 0) {
       this.boss.stagger -= dt;
       return;
@@ -1462,8 +1775,8 @@ export class DarkSoulsGame {
     }
 
     const dist = Math.max(0.001, toPlayer.length());
-    if (dist > 5.2) {
-      const speed = this.boss.phase === 2 ? 2.65 : 1.8;
+    if (dist > 4.4) {
+      const speed = this.boss.phase === 2 ? 6 : 3;
       this.boss.position.addScaledVector(toPlayer.normalize(), speed * dt);
     }
 
@@ -1490,7 +1803,26 @@ export class DarkSoulsGame {
       if (white) part.material.color.set(0xf6f1e7);
       else if (flashing) part.material.color.set(this.boss.phase === 2 ? 0x9d2218 : 0x6e352f);
       else part.material.color.set(part.userData.baseColor);
+      if (part.material.emissive) {
+        if (this.boss.phase === 2) {
+          const pulse = 0.45 + Math.sin(this.clock.elapsedTime * 5) * 0.2 + (this.boss.phaseTransition > 0 ? 0.8 : 0);
+          part.material.emissive.set(0x8f1208);
+          part.material.emissiveIntensity = pulse;
+        } else {
+          part.material.emissive.set(0x000000);
+          part.material.emissiveIntensity = 0;
+        }
+      }
     }
+  }
+
+  spawnPhaseTransitionSparks(dt) {
+    if (Math.random() > dt * 18) return;
+    this.spawnParticles(
+      this.boss.position.clone().add(new THREE.Vector3(randomBetween(-0.8, 0.8), randomBetween(0.6, 2.7), randomBetween(-0.8, 0.8))),
+      2,
+      0xff3b1f
+    );
   }
 
   chooseBossAttack(dist) {
@@ -1498,7 +1830,7 @@ export class DarkSoulsGame {
     const step = this.combo[this.comboIndex];
     if (!step) {
       this.combo = [];
-      this.comboRecovery = randomBetween(1, phaseTwo ? 4.2 : 5);
+      this.comboRecovery = randomBetween(0.08, phaseTwo ? 0.28 : 0.42);
       return;
     }
     this.startBossPrimitive(step.attack, dist);
@@ -1506,7 +1838,7 @@ export class DarkSoulsGame {
     this.comboTimer = step.gap;
     if (this.comboIndex >= this.combo.length) {
       this.combo = [];
-      this.comboRecovery = randomBetween(1, phaseTwo ? 4.2 : 5);
+      this.comboRecovery = randomBetween(0.08, phaseTwo ? 0.28 : 0.42);
     }
     this.boss.attackHit = false;
   }
@@ -1515,18 +1847,18 @@ export class DarkSoulsGame {
     const phaseTwo = this.boss.phase === 2;
     const templates = phaseTwo
       ? [
-          { name: "p2-1", attacks: [ATTACK.LEAP, ATTACK.TRIPLE_PROJECTILE, ATTACK.STAFF, ATTACK.RAPID_FIRE] },
-          { name: "p2-2", attacks: [ATTACK.BARRAGE, ATTACK.CHAIN, ATTACK.SLAM, ATTACK.SPREAD, ATTACK.DOME_BLAST] },
-          { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.LEAP, ATTACK.RAPID_FIRE] },
-          { name: "p2-4", attacks: [ATTACK.CHAIN, ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DOME_BLAST] },
-          { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.SPREAD, ATTACK.STAFF, ATTACK.LEAP, ATTACK.RAPID_FIRE] }
+          { name: "p2-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.DASH_SLAM] },
+          { name: "p2-2", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.CHAIN, ATTACK.DOME_BLAST] },
+          { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.DASH_SLAM, ATTACK.LEAP, ATTACK.RAPID_FIRE] },
+          { name: "p2-4", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, Math.random() < 0.5 ? ATTACK.DASH_SLAM : ATTACK.CHAIN] },
+          { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.DASH_SLAM, ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.LEAP] }
         ]
       : [
-          { name: "p1-1", attacks: [ATTACK.PROJECTILE, ATTACK.SLAM, ATTACK.RAPID_FIRE] },
-          { name: "p1-2", attacks: [ATTACK.SPREAD, ATTACK.STAFF, ATTACK.DOME_BLAST] },
-          { name: "p1-3", attacks: [ATTACK.SLAM, ATTACK.PROJECTILE, ATTACK.SPREAD] },
-          { name: "p1-4", attacks: [ATTACK.LEAP, ATTACK.PROJECTILE, ATTACK.RAPID_FIRE] },
-          { name: "p1-5", attacks: [ATTACK.BARRAGE, ATTACK.SLAM] }
+          { name: "p1-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM] },
+          { name: "p1-2", attacks: [ATTACK.DASH_SLAM, ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.STAFF] },
+          { name: "p1-3", attacks: [ATTACK.SLAM, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.DASH_SLAM] },
+          { name: "p1-4", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, Math.random() < 0.75 ? ATTACK.DASH_SLAM : ATTACK.PROJECTILE] },
+          { name: "p1-5", attacks: [ATTACK.BARRAGE, ATTACK.DASH_SLAM, ATTACK.SLAM] }
         ];
     let options = templates.filter((template) => template.name !== this.lastComboName);
     if (options.length === 0) options = templates;
@@ -1536,13 +1868,13 @@ export class DarkSoulsGame {
     const targetCount = phaseTwo ? Math.floor(randomBetween(3, Math.min(6, attacks.length + 1))) : Math.floor(randomBetween(2, Math.min(4, attacks.length + 1)));
     return attacks.slice(0, targetCount).map((attack) => ({
       attack,
-      gap: randomBetween(1, phaseTwo ? 4.4 : 5)
+      gap: randomBetween(0.06, phaseTwo ? 0.24 : 0.36)
     }));
   }
 
   startBossPrimitive(attack, dist) {
     const phaseTwo = this.boss.phase === 2;
-    const telegraph = phaseTwo ? 0.35 : 0.5;
+    const telegraph = phaseTwo ? 0.16 : 0.22;
     this.boss.state = attack;
     this.boss.attackHit = false;
     this.boss.tripleShots = 0;
@@ -1554,7 +1886,7 @@ export class DarkSoulsGame {
     if (attack === ATTACK.SWEEP) this.boss.stateTime = telegraph + 0.7;
     if (attack === ATTACK.STAFF) this.boss.stateTime = phaseTwo ? 0.76 : 0.94;
     if (attack === ATTACK.DASH_SLAM) {
-      this.boss.stateTime = telegraph + 0.62;
+      this.boss.stateTime = telegraph + 0.42;
       const targetPillar = this.pickPillarTarget();
       const target = targetPillar && Math.random() < 0.2 ? targetPillar.position : this.player.position;
       this.boss.dashDirection.copy(target).sub(this.boss.position).setY(0).normalize();
@@ -1601,8 +1933,8 @@ export class DarkSoulsGame {
           ? this.boss.phase === 2 ? 1.72 : 1.95
         : this.boss.state === ATTACK.STAFF
           ? this.boss.phase === 2 ? 0.7 : 0.88
-          : this.boss.state === ATTACK.DASH_SLAM
-            ? this.boss.phase === 2 ? 0.97 : 1.12
+        : this.boss.state === ATTACK.DASH_SLAM
+            ? this.boss.phase === 2 ? 0.58 : 0.64
             : this.boss.state === ATTACK.SLAM
               ? this.boss.phase === 2 ? 0.72 : 0.95
               : this.boss.state === ATTACK.TRIPLE_PROJECTILE
@@ -1663,7 +1995,7 @@ export class DarkSoulsGame {
       this.boss.leapHeight = leapArc * 24;
       this.boss.group.rotation.x = -leapArc * 0.42;
       if (progress > 0.12 && progress < 0.5) {
-        this.boss.position.addScaledVector(this.boss.dashDirection, (this.boss.phase === 2 ? 8.8 : 7.2) * dt);
+        this.boss.position.addScaledVector(this.boss.dashDirection, (this.boss.phase === 2 ? 62 : 48) * dt);
         this.boss.position.x = clamp(this.boss.position.x, -ARENA.halfSize + 2, ARENA.halfSize - 2);
         this.boss.position.z = clamp(this.boss.position.z, -ARENA.halfSize + 2, ARENA.halfSize - 2);
       }
@@ -1687,12 +2019,12 @@ export class DarkSoulsGame {
       }
     }
     if (this.boss.state === ATTACK.DASH_SLAM) {
-      if (progress > 0.28 && progress < 0.62) {
-        this.boss.position.addScaledVector(this.boss.dashDirection, (this.boss.phase === 2 ? 18 : 14) * dt);
+      if (progress > 0.18 && progress < 0.46) {
+        this.boss.position.addScaledVector(this.boss.dashDirection, (this.boss.phase === 2 ? 48 : 34) * dt);
         this.boss.position.x = clamp(this.boss.position.x, -ARENA.halfSize + 2, ARENA.halfSize - 2);
         this.boss.position.z = clamp(this.boss.position.z, -ARENA.halfSize + 2, ARENA.halfSize - 2);
       }
-      if (progress > 0.66 && !this.boss.attackHit) {
+      if (progress > 0.5 && !this.boss.attackHit) {
         this.boss.attackHit = true;
         this.resolveBossSlam(true);
       }
@@ -1702,7 +2034,7 @@ export class DarkSoulsGame {
       thresholds.forEach((threshold, index) => {
         if (progress > threshold && this.boss.tripleShots === index) {
           this.boss.tripleShots += 1;
-          this.castOrb();
+          this.castOrb(PROJECTILE_TYPES[4]);
         }
       });
       }
@@ -1830,7 +2162,20 @@ export class DarkSoulsGame {
     return mesh;
   }
 
-  pushProjectile({ mesh, direction, speed, life = 4, damage = BOSS.projectileDamage, spin = 0, homing = false, turnRate = 0 }) {
+  pushProjectile({
+    mesh,
+    direction,
+    speed,
+    life = 4,
+    damage = BOSS.projectileDamage,
+    spin = 0,
+    homing = false,
+    turnRate = 0,
+    owner = "boss",
+    playerSpecial = "",
+    pingPong = false,
+    slow = false
+  }) {
     this.scene.add(mesh);
     this.projectiles.push({
       mesh,
@@ -1840,7 +2185,11 @@ export class DarkSoulsGame {
       damage,
       spin,
       homing,
-      turnRate
+      turnRate,
+      owner,
+      playerSpecial,
+      pingPong,
+      slow
     });
   }
 
@@ -1870,7 +2219,8 @@ export class DarkSoulsGame {
       damage: type.damage,
       spin: randomBetween(5, 13),
       homing: Boolean(type.homing),
-      turnRate: type.homing ? 1.9 : 0
+      turnRate: type.homing ? 1.9 : 0,
+      slow: type.name === "blue star" || type.name === "frost bead"
     });
   }
 
@@ -1915,22 +2265,23 @@ export class DarkSoulsGame {
     this.breakPillarsInBox(this.getBossBox().expandByScalar(radius));
   }
 
-  castOrb() {
+  castOrb(type = PROJECTILE_TYPES[0]) {
     this.groundShake = Math.max(this.groundShake, 0.16);
     this.audio.projectileSpawn();
     const start = this.boss.position.clone().add(new THREE.Vector3(0, 1.7, 0));
     const direction = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)).sub(start).normalize();
-    const mesh = this.makeProjectileMesh(PROJECTILE_TYPES[0]);
+    const mesh = this.makeProjectileMesh(type);
     mesh.position.copy(start);
-    const light = new THREE.PointLight(0xff4a20, 1.1, 6);
+    const light = new THREE.PointLight(type.emissive || 0xff4a20, 1.1, 6);
     mesh.add(light);
     this.pushProjectile({
       mesh,
       direction,
-      speed: this.boss.phase === 2 ? 9.2 : 6.2,
+      speed: (this.boss.phase === 2 ? 9.2 : 6.2) + (type.name === "blue star" ? 4 : 0),
       life: 4,
       damage: BOSS.projectileDamage,
-      spin: 5
+      spin: 5,
+      slow: type.name === "blue star" || type.name === "frost bead"
     });
   }
 
@@ -1949,7 +2300,8 @@ export class DarkSoulsGame {
         speed: this.boss.phase === 2 ? 9.6 : 6.8,
         life: 4,
         damage: type.damage,
-        spin: 7
+        spin: 7,
+        slow: type.name === "blue star" || type.name === "frost bead"
       });
     }
   }
@@ -2131,16 +2483,45 @@ export class DarkSoulsGame {
           continue;
         }
         const projectileBox = new THREE.Box3().setFromObject(projectile.mesh).expandByScalar(0.15);
+
+        if (projectile.owner === "player") {
+          if (this.projectileTouchesBossShield(projectile)) {
+            this.blockPlayerProjectileWithShield(projectile);
+            continue;
+          }
+
+          if (projectile.playerSpecial === "slash") {
+            projectile.mesh.material.opacity = Math.max(0, projectile.life / 0.22) * 0.86;
+            if (!projectile.hit && this.boss.position.distanceTo(projectile.mesh.position) < projectile.slashRadius + BOSS.radius) {
+              projectile.hit = true;
+              this.damageBoss(projectile.damage, "special");
+            }
+            continue;
+          }
+
+          if (projectileBox.intersectsBox(this.getBossBox())) {
+            projectile.life = 0;
+            this.damageBoss(projectile.damage || 18, projectile.playerSpecial || "special");
+            this.spawnParticles(projectile.mesh.position.clone(), 12, projectile.playerSpecial === "needle" ? 0x55caff : 0xff5b3a);
+          }
+          continue;
+        }
+
         if (projectile.deflected && projectileBox.intersectsBox(this.getBossBox())) {
           projectile.life = 0;
           this.damageBoss(45, "deflect");
           this.spawnParticles(projectile.mesh.position.clone(), 18, 0xffe66d);
           this.setMessage("The Warlock eats his own flame.");
+        } else if (projectile.pingPong && this.canDeflectProjectile(projectileBox)) {
+          this.deflectPingPongProjectile(projectile);
         } else if (!projectile.deflected && this.canDeflectProjectile(projectileBox)) {
           this.deflectProjectile(projectile);
         } else if (projectileBox.intersectsBox(this.getPlayerBox())) {
           projectile.life = 0;
-          this.damagePlayer(projectile.damage || BOSS.projectileDamage, "projectile");
+          if (projectile.slow) {
+            this.player.slow = Math.max(this.player.slow, 2.4);
+          }
+          this.damagePlayer(projectile.damage || BOSS.projectileDamage, projectile.slow ? "slowProjectile" : "projectile");
           this.spawnParticles(projectile.mesh.position.clone(), 8, 0xff7a35);
         }
       }
@@ -2169,19 +2550,35 @@ export class DarkSoulsGame {
         this.boss.stagger = BOSS.staggerTime;
         this.boss.flash = BOSS.staggerTime;
         this.shake = 0.18;
+        this.player.guardFlash = 0.22;
         this.parryTint = 0.2;
         this.chromaticFlash = Math.max(this.chromaticFlash, 0.2);
         this.audio.parry();
+        this.spawnGuardImpact();
         this.setMessage("Parry. The Warlock staggers.");
         return;
       }
-      amount *= 0.38;
-      this.player.stamina = Math.max(0, this.player.stamina - 16);
-      this.setMessage("Blocked, but the impact bites.");
+      const staminaLoss = Math.max(28, amount * 2.4);
+      this.player.stamina = Math.max(0, this.player.stamina - staminaLoss);
+      this.player.guardFlash = 0.22;
+      this.audio.clank();
+      this.spawnGuardImpact();
+      if (this.player.stamina > 0) {
+        this.shake = Math.max(this.shake, 0.24);
+        this.chromaticFlash = Math.max(this.chromaticFlash, 0.08);
+        this.setMessage("Blocked. Your stamina buckles.");
+        return;
+      }
+      this.player.blockHeld = false;
+      amount *= 0.75;
+      this.shake = Math.max(this.shake, 0.36);
+      this.setMessage("Guard broken.");
     } else {
       this.setMessage(
         source === "projectile"
           ? "Arcane fire finds you."
+          : source === "slowProjectile"
+            ? "Blue frost drags at your legs."
           : source === "dome"
             ? "The blast tears the ground away."
             : "Crushed by the Warlock's strike."
@@ -2195,7 +2592,7 @@ export class DarkSoulsGame {
     const away = this.player.position.clone().sub(this.boss.position).setY(0);
     if (away.lengthSq() < 0.001) away.set(0, 0, 1);
     away.normalize();
-    const force = source === "dome" ? 100 : source === "projectile" ? 13 : source === "aoe" ? 18 : 22;
+    const force = source === "dome" ? 100 : source === "projectile" || source === "slowProjectile" ? 13 : source === "aoe" ? 18 : 22;
     this.player.knockback.addScaledVector(away, force);
     this.shake = 0.42;
     this.spawnDamageOutline();
@@ -2376,6 +2773,22 @@ export class DarkSoulsGame {
     rightLeg.position.z = moving ? -Math.sin(elapsed * 12) * 0.07 : 0;
   }
 
+  updateGuardVisual(elapsed) {
+    const guard = this.player.group.getObjectByName("playerGuard");
+    if (!guard) return;
+    const active = this.player.blockHeld || this.player.guardFlash > 0;
+    guard.visible = active;
+    if (!active) {
+      guard.material.opacity = 0;
+      return;
+    }
+
+    const flash = this.player.guardFlash > 0 ? this.player.guardFlash / 0.22 : 0;
+    const pulse = 0.08 + Math.sin(elapsed * 18) * 0.025;
+    guard.material.opacity = clamp(0.24 + pulse + flash * 0.62, 0, 0.92);
+    guard.scale.setScalar(1 + flash * 0.38 + (this.player.blockHeld ? Math.sin(elapsed * 12) * 0.04 : 0));
+  }
+
   updateBossLimbAnimation(dt, elapsed, distanceToPlayer) {
     const leftLeg = this.boss.group.getObjectByName("bossLeftLeg");
     const rightLeg = this.boss.group.getObjectByName("bossRightLeg");
@@ -2434,6 +2847,26 @@ export class DarkSoulsGame {
       maxLife: 0.5,
       outline: true
     });
+  }
+
+  spawnGuardImpact() {
+    const forward = new THREE.Vector3(Math.sin(this.player.facing), 0, Math.cos(this.player.facing));
+    const origin = this.player.position.clone().addScaledVector(forward, 0.85).add(new THREE.Vector3(0, 1.05, 0));
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.72, 0.035, 8, 38),
+      new THREE.MeshBasicMaterial({ color: 0xd7ecff, transparent: true, opacity: 0.92 })
+    );
+    ring.position.copy(origin);
+    ring.rotation.set(Math.PI / 2, 0, -this.player.facing);
+    this.enableBloom(ring);
+    this.scene.add(ring);
+    this.particles.push({
+      mesh: ring,
+      velocity: new THREE.Vector3(),
+      life: 0.22,
+      maxLife: 0.22
+    });
+    this.spawnParticles(origin, 10, 0xd7ecff);
   }
 
   spawnParticles(position, count, color) {
@@ -2503,6 +2936,9 @@ export class DarkSoulsGame {
     this.hpBar.style.width = `${(this.player.hp / PLAYER.maxHp) * 100}%`;
     this.staminaBar.style.width = `${(this.player.stamina / PLAYER.maxStamina) * 100}%`;
     this.bossHpBar.style.width = `${(this.boss.hp / BOSS.maxHp) * 100}%`;
+    if (this.bossShieldBar) {
+      this.bossShieldBar.style.width = `${(this.boss.guardHp / BOSS.maxShield) * 100}%`;
+    }
   }
 
   setMessage(text) {
