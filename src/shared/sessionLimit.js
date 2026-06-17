@@ -6,6 +6,11 @@ let timerId = null;
 let lastTick = Date.now();
 let lastTickDay = null;
 
+function isDevelopmentLimitBypassed() {
+  const localHostnames = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
+  return import.meta.env.VITE_DISABLE_DAILY_LIMIT === "true" || localHostnames.includes(window.location.hostname);
+}
+
 function now() {
   return Date.now();
 }
@@ -75,10 +80,12 @@ function addElapsedTime() {
 }
 
 export function getRemainingSessionMs() {
+  if (isDevelopmentLimitBypassed()) return SESSION_LIMIT_MS;
   return Math.max(0, SESSION_LIMIT_MS - readRecord().usedMs);
 }
 
 export function isSessionExpired() {
+  if (isDevelopmentLimitBypassed()) return false;
   return getRemainingSessionMs() <= 0;
 }
 
@@ -90,6 +97,14 @@ function formatRemaining(ms) {
 }
 
 function updateTimerDisplays() {
+  if (isDevelopmentLimitBypassed()) {
+    for (const element of document.querySelectorAll("[data-session-timer]")) {
+      element.textContent = "Dev";
+      element.removeAttribute("data-low-time");
+    }
+    return;
+  }
+
   const record = addElapsedTime();
   const remaining = Math.max(0, SESSION_LIMIT_MS - record.usedMs);
   for (const element of document.querySelectorAll("[data-session-timer]")) {
@@ -102,6 +117,11 @@ function updateTimerDisplays() {
 }
 
 export function initSessionLimit(onExpire) {
+  if (isDevelopmentLimitBypassed()) {
+    updateTimerDisplays();
+    return;
+  }
+
   lastTick = now();
   lastTickDay = todayKey();
   writeRecord(readRecord());

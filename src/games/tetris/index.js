@@ -42,9 +42,9 @@ export function renderTetrisPage() {
           <section class="controls-panel">
             <h2>Controls</h2>
             <dl>
-              <div><dt>← / →</dt><dd>Move</dd></div>
-              <div><dt>↑</dt><dd>Rotate</dd></div>
-              <div><dt>↓</dt><dd>Soft drop</dd></div>
+              <div><dt>← / →</dt><dd>Move, or A / D</dd></div>
+              <div><dt>↑</dt><dd>Rotate, or W</dd></div>
+              <div><dt>↓</dt><dd>Soft drop, or S</dd></div>
               <div><dt>Space</dt><dd>Hard drop</dd></div>
               <div><dt>Enter</dt><dd>Restart after game over</dd></div>
             </dl>

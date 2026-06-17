@@ -9,15 +9,6 @@ export const games = [
     load: () => import("../games/tetris/index.js").then((module) => module.renderTetrisPage)
   },
   {
-    id: "cavern-crafter",
-    title: "Cavern Crafter",
-    path: "/games/cavern-crafter",
-    description: "Dig, build, and explore a pocket-sized underground world.",
-    icon: "⬒",
-    accent: "#ffcf4f",
-    load: () => import("../games/cavern/index.js").then((module) => module.renderCavernPage)
-  },
-  {
     id: "darksouls",
     title: "The Ashen Warlock",
     path: "/games/darksouls",

@@ -260,16 +260,6 @@ h1 {
   line-height: 1.45;
 }
 
-.game-card--soon {
-  --accent: #ffcf4f;
-  color: rgba(255, 255, 255, 0.68);
-}
-
-.game-card--soon .game-card__icon {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.72);
-}
-
 .empty-state {
   display: grid;
   min-height: 65vh;

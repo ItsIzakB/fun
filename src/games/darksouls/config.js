@@ -3,27 +3,31 @@ export const BOSS_NAME = "The Ashen Warlock";
 export const PLAYER = {
   maxHp: 120,
   maxStamina: 100,
-  speed: 7.2,
+  speed: 6.4,
   dodgeSpeed: 15,
   dodgeTime: 0.42,
   invincibleTime: 0.42,
-  lightDamage: 30,
-  heavyDamage: 70,
+  lightDamage: 18,
+  heavyDamage: 42,
   lightCost: 15,
   heavyCost: 30,
   dodgeCost: 25,
-  blockCostPerSecond: 10,
+  blockStartCost: 32,
+  blockCostPerSecond: 6,
+  blockCooldown: 0.85,
   staminaRegen: 28,
   radius: 0.55
 };
 
 export const WEAPONS = {
   great: {
-    label: "Great blade",
-    description: "Long reach and brutal impact, but slow and costly.",
+    label: "Cinder Greatblade",
+    description: "Heavy reach with a charged red flame line that grows with the hold.",
+    id: "great",
+    special: "flame",
     bladeScale: 1.38,
-    lightDamage: 42,
-    heavyDamage: 92,
+    lightDamage: 24,
+    heavyDamage: 52,
     lightCost: 22,
     heavyCost: 42,
     lightDuration: 0.46,
@@ -36,11 +40,13 @@ export const WEAPONS = {
     heavyReach: 3.75
   },
   arming: {
-    label: "Arming sword",
-    description: "Balanced reach, speed, stamina cost, and damage.",
+    label: "Azure Needle",
+    description: "Balanced steel that releases fast blue bolts. Hold to fire more.",
+    id: "arming",
+    special: "needle",
     bladeScale: 1,
-    lightDamage: 30,
-    heavyDamage: 70,
+    lightDamage: 18,
+    heavyDamage: 40,
     lightCost: 15,
     heavyCost: 30,
     lightDuration: 0.32,
@@ -53,11 +59,13 @@ export const WEAPONS = {
     heavyReach: 3
   },
   short: {
-    label: "Short fang",
-    description: "Fast and cheap, but demands close range.",
+    label: "Sun Fang",
+    description: "Fast short blade with a charged golden close-range slash.",
+    id: "short",
+    special: "slash",
     bladeScale: 0.68,
-    lightDamage: 20,
-    heavyDamage: 48,
+    lightDamage: 12,
+    heavyDamage: 28,
     lightCost: 9,
     heavyCost: 20,
     lightDuration: 0.22,
@@ -73,12 +81,12 @@ export const WEAPONS = {
 
 export const BOSS = {
   maxHp: 520,
+  maxShield: 150,
   radius: 1.15,
-  meleeDamage: 25,
-  projectileDamage: 15,
-  meleeRange: 2.25,
-  staggerTime: 1.5,
-  phaseTwoThreshold: 0.5
+  meleeDamage: 18,
+  projectileDamage: 8,
+  meleeRange: 2.75,
+  staggerTime: 1.5
 };
 
 export const ARENA = {
