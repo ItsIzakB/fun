@@ -20,6 +20,7 @@ export function createPlayerState() {
     attackDuration: 0,
     attackType: "light",
     attackVariant: 0,
+    clashStun: 0,
     combo: 0,
     attackCooldown: 0,
     charging: 0,
@@ -51,8 +52,13 @@ export function createBossState() {
     rapidShots: 0,
     rapidTimer: 0,
     dashDirection: new THREE.Vector3(),
+    dashTravel: 0,
+    moveDashTime: 0,
+    moveDashCooldown: 0,
+    moveDashDirection: new THREE.Vector3(),
     leapHeight: 0,
     leapFollowup: null,
+    antiAirBlast: false,
     shield: 0,
     shieldCooldown: 0,
     shieldHits: 0,
@@ -62,6 +68,7 @@ export function createBossState() {
     finalFrenzyCharge: 0,
     finalFrenzy: false,
     stagger: 0,
+    clashStun: 0,
     flash: 0
   };
 }

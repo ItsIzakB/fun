@@ -44,7 +44,7 @@ export function renderTetrisPage() {
             <dl>
               <div><dt>← / →</dt><dd>Move, or A / D</dd></div>
               <div><dt>↑</dt><dd>Rotate, or W</dd></div>
-              <div><dt>↓</dt><dd>Soft drop, or S</dd></div>
+              <div><dt>↓</dt><dd>Floor drop, or S</dd></div>
               <div><dt>Space</dt><dd>Hard drop</dd></div>
               <div><dt>Enter</dt><dd>Restart after game over</dd></div>
             </dl>
