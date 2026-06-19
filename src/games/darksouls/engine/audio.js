@@ -205,9 +205,9 @@ export class ProceduralAudio {
     this.noise(0.16, 1800, 0.26);
   }
   pillarBreak() { this.oscillatorHit("triangle", 60, 0.8, 2); this.noise(0.5, 120, 0.16); }
-  projectileSpawn(kind = "fire") {
-    if (kind === "ice" && this.playSample("iceLaunch", { volume: 0.62, rate: 1.05 })) return;
-    if (this.playSample("fireLaunch", { volume: 0.64, rate: 1.08 })) return;
+  projectileSpawn(kind = "fire", { volume = 0.64, rate = 1.08, detune = 0 } = {}) {
+    if (kind === "ice" && this.playSample("iceLaunch", { volume, rate, detune })) return;
+    if (this.playSample("fireLaunch", { volume, rate, detune })) return;
     if (!this.ensure()) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -215,7 +215,7 @@ export class ProceduralAudio {
     osc.type = "sine";
     osc.frequency.setValueAtTime(300, now);
     osc.frequency.linearRampToValueAtTime(600, now + 0.3);
-    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.setValueAtTime(Math.max(0.025, volume * 0.125), now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
     osc.connect(gain);
     gain.connect(this.master);

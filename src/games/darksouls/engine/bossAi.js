@@ -84,26 +84,35 @@ export function buildBossCombo({ phase, lastComboName = "" }) {
   const tuning = getBossTuning(phase);
   const late = phase >= 4;
   const desperate = phase >= 5;
+  const shielded = phase < 3;
   const templates = desperate
     ? [
-        { name: "p5-1", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM] },
-        { name: "p5-2", attacks: [ATTACK.DASH_SLAM, ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.CHAIN, ATTACK.DASH_SLAM] },
-        { name: "p5-3", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.LEAP, ATTACK.DASH_SLAM] }
+        { name: "p5-1", attacks: [ATTACK.RAPID_FIRE, ATTACK.SLAM, ATTACK.STAFF, ATTACK.SLAM, ATTACK.STAFF] },
+        { name: "p5-2", attacks: [ATTACK.SLAM, ATTACK.TRIPLE_PROJECTILE, ATTACK.RAPID_FIRE, ATTACK.CHAIN, ATTACK.STAFF] },
+        { name: "p5-3", attacks: [ATTACK.SLAM, ATTACK.RAPID_FIRE, ATTACK.STAFF, ATTACK.LEAP, ATTACK.SLAM] }
       ]
     : late
       ? [
-        { name: "p2-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.DASH_SLAM] },
-        { name: "p2-2", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.CHAIN, ATTACK.DOME_BLAST] },
-        { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.DASH_SLAM, ATTACK.LEAP, ATTACK.RAPID_FIRE] },
-        { name: "p2-4", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, Math.random() < 0.5 ? ATTACK.DASH_SLAM : ATTACK.CHAIN] },
-        { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.DASH_SLAM, ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.LEAP] }
+        { name: "p2-1", attacks: [ATTACK.RAPID_FIRE, ATTACK.TRIPLE_PROJECTILE, ATTACK.SLAM, ATTACK.STAFF, ATTACK.SLAM] },
+        { name: "p2-2", attacks: [ATTACK.SLAM, ATTACK.STAFF, ATTACK.SLAM, ATTACK.CHAIN, ATTACK.DOME_BLAST] },
+        { name: "p2-3", attacks: [ATTACK.SPREAD, ATTACK.RAPID_FIRE, ATTACK.PROJECTILE, ATTACK.SLAM, ATTACK.LEAP, ATTACK.RAPID_FIRE] },
+        { name: "p2-4", attacks: [ATTACK.STAFF, ATTACK.RAPID_FIRE, ATTACK.SLAM, ATTACK.STAFF, Math.random() < 0.5 ? ATTACK.SLAM : ATTACK.CHAIN] },
+        { name: "p2-5", attacks: [ATTACK.BARRAGE, ATTACK.RAPID_FIRE, ATTACK.SPREAD, ATTACK.SLAM, ATTACK.STAFF, ATTACK.LEAP] }
       ]
-    : [
-        { name: "p1-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.DASH_SLAM, ATTACK.DASH_SLAM] },
-        { name: "p1-2", attacks: [ATTACK.DASH_SLAM, ATTACK.SPREAD, ATTACK.DASH_SLAM, ATTACK.STAFF] },
-        { name: "p1-3", attacks: [ATTACK.SLAM, ATTACK.DASH_SLAM, ATTACK.PROJECTILE, ATTACK.DASH_SLAM] },
-        { name: "p1-4", attacks: [ATTACK.DASH_SLAM, ATTACK.DASH_SLAM, Math.random() < 0.75 ? ATTACK.DASH_SLAM : ATTACK.PROJECTILE] },
-        { name: "p1-5", attacks: [ATTACK.BARRAGE, ATTACK.DASH_SLAM, ATTACK.SLAM] }
+    : shielded
+      ? [
+        { name: "shield-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.SLAM, ATTACK.STAFF] },
+        { name: "shield-2", attacks: [ATTACK.SLAM, ATTACK.SPREAD, ATTACK.SLAM, ATTACK.STAFF] },
+        { name: "shield-3", attacks: [ATTACK.SLAM, ATTACK.PROJECTILE, ATTACK.STAFF] },
+        { name: "shield-4", attacks: [ATTACK.STAFF, ATTACK.SLAM, ATTACK.CHAIN] },
+        { name: "shield-5", attacks: [ATTACK.SPREAD, ATTACK.STAFF, ATTACK.SLAM] }
+      ]
+      : [
+        { name: "p3-1", attacks: [ATTACK.TRIPLE_PROJECTILE, ATTACK.RAPID_FIRE, ATTACK.SLAM, ATTACK.STAFF] },
+        { name: "p3-2", attacks: [ATTACK.SLAM, ATTACK.SPREAD, ATTACK.RAPID_FIRE, ATTACK.STAFF] },
+        { name: "p3-3", attacks: [ATTACK.SLAM, ATTACK.RAPID_FIRE, ATTACK.PROJECTILE, ATTACK.STAFF] },
+        { name: "p3-4", attacks: [ATTACK.BARRAGE, ATTACK.SLAM, ATTACK.STAFF] },
+        { name: "p3-5", attacks: [ATTACK.SPREAD, ATTACK.RAPID_FIRE, ATTACK.SLAM] }
       ];
   let options = templates.filter((template) => template.name !== lastComboName);
   if (options.length === 0) options = templates;
@@ -122,7 +131,7 @@ export function buildBossCombo({ phase, lastComboName = "" }) {
 export function getBossAttackTotal(attack, phase) {
   const scale = getBossTuning(phase).attackTimeScale;
   if (attack === ATTACK.SWEEP) return 1.05 * scale;
-  if (attack === ATTACK.RAPID_FIRE) return 10.45;
+  if (attack === ATTACK.RAPID_FIRE) return 4.05;
   if (attack === ATTACK.DOME_BLAST) return 2.45 * scale;
   if (attack === ATTACK.BARRAGE) return (phase >= 4 ? 1.65 : 1.9) * scale;
   if (attack === ATTACK.CHAIN) return 0.52 * scale;

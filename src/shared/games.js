@@ -11,7 +11,7 @@ export const games = [
   {
     id: "darksouls",
     title: "The Ashen Warlock",
-    path: "/games/darksouls",
+    path: "/games/ashen-warlock",
     description: "A punishing 3D dungeon encounter. Patience and precision are your only weapons.",
     icon: "♜",
     accent: "#b74a35",

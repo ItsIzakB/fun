@@ -11,6 +11,11 @@ import { approachAngle, clamp, easeOut, makeBox, randomBetween } from "./engine/
 import { BloomCompositeShader, ChromaticAberrationShader, VignetteShader } from "./engine/shaders.js";
 import { createBossState, createPlayerState } from "./engine/state.js";
 
+const BOSS_SHIELD_BREAK_HITS = 7;
+const RAPID_FIRE_INTERVAL = 1 / 30;
+const RAPID_FIRE_SHOTS = 100;
+const RAPID_FIRE_TELL = 0.18;
+
 export class DarkSoulsGame {
   constructor({
     stage,
@@ -51,6 +56,7 @@ export class DarkSoulsGame {
     this.lockOn = false;
     this.projectiles = [];
     this.particles = [];
+    this.attackIndicators = [];
     this.hitboxes = [];
     this.obstacles = [];
     this.pillars = [];
@@ -72,6 +78,8 @@ export class DarkSoulsGame {
     this.groundShake = 0;
     this.chromaticFlash = 0;
     this.parryTint = 0;
+    this.slowMo = 0;
+    this.slowMoScale = 1;
     this.audio = new ProceduralAudio();
 
     this.player = createPlayerState();
@@ -554,7 +562,7 @@ export class DarkSoulsGame {
     );
     ember.position.set(1.25, 3.58, 0.1);
     const shield = new THREE.Mesh(
-      new THREE.CircleGeometry(2.7, 48),
+      new THREE.CircleGeometry(2.55, 48),
       new THREE.MeshBasicMaterial({
         color: 0x7edbff,
         transparent: true,
@@ -773,6 +781,8 @@ export class DarkSoulsGame {
     });
     this.projectiles = [];
     this.hitboxes = [];
+    this.attackIndicators.forEach((indicator) => this.scene.remove(indicator.mesh));
+    this.attackIndicators = [];
     this.particles.forEach((particle) => this.scene.remove(particle.mesh));
     this.particles = [];
     this.ended = false;
@@ -786,7 +796,8 @@ export class DarkSoulsGame {
 
   loop() {
     if (!this.running) return;
-    const dt = Math.min(this.clock.getDelta(), 0.033);
+    const rawDt = Math.min(this.clock.getDelta(), 0.033);
+    const dt = rawDt * (this.slowMo > 0 ? this.slowMoScale : 1);
     const elapsed = this.clock.elapsedTime;
     if (!this.ended && this.weaponSelected) {
       this.updatePlayer(dt, elapsed);
@@ -794,9 +805,11 @@ export class DarkSoulsGame {
       this.updateProjectiles(dt);
       this.updateHitboxes(dt);
       this.updateParticles(dt);
+      this.updateAttackIndicators(dt);
       this.updateDebris(dt);
       this.updateHealthPickups(dt, elapsed);
     }
+    this.slowMo = Math.max(0, this.slowMo - rawDt);
     this.audio.updateHeartbeat(dt, this.player.hp / PLAYER.maxHp);
     this.updatePostProcessing(dt);
     this.updateCamera(dt);
@@ -812,7 +825,9 @@ export class DarkSoulsGame {
 
     const chargeSlow = this.player.charging > 0 ? 0.38 : 1;
     const slowFactor = this.player.slow > 0 ? 0.38 : 1;
-    if (this.player.rolling > 0) {
+    if (this.player.clashStun > 0) {
+      this.player.clashStun = Math.max(0, this.player.clashStun - dt);
+    } else if (this.player.rolling > 0) {
       this.player.rolling -= dt;
       this.player.invincible = Math.max(this.player.invincible, this.player.rolling);
       this.movePlayer(this.player.inputDir, PLAYER.dodgeSpeed * slowFactor * dt);
@@ -854,7 +869,7 @@ export class DarkSoulsGame {
     this.player.blockCooldown = Math.max(0, this.player.blockCooldown - dt);
     this.player.guardFlash = Math.max(0, this.player.guardFlash - dt);
     this.player.damageFlash = Math.max(0, this.player.damageFlash - dt);
-    this.player.attacking = Math.max(0, this.player.attacking - dt);
+    if (this.player.clashStun <= 0) this.player.attacking = Math.max(0, this.player.attacking - dt);
     this.player.attackCooldown = Math.max(0, this.player.attackCooldown - dt);
     this.player.group.position.copy(this.player.position);
     this.player.group.position.y = this.player.airHeight + Math.sin(elapsed * 4.2) * 0.035;
@@ -971,6 +986,7 @@ export class DarkSoulsGame {
       this.player.attackVariant = 0;
     }
     this.player.hitDone = false;
+    if (!this.player.grounded) this.airRushTowardBoss(type);
     this.audio.playerAttack(type);
     this.hitboxes.push({
       type,
@@ -979,6 +995,17 @@ export class DarkSoulsGame {
       damage: type === "heavy" ? this.weapon.heavyDamage : this.weapon.lightDamage
     });
     this.setMessage(type === "heavy" ? "Heavy swing committed." : "Quick cut.");
+  }
+
+  airRushTowardBoss(type) {
+    const toBoss = this.boss.position.clone().sub(this.player.position).setY(0);
+    if (toBoss.lengthSq() < 0.001) return;
+    const distance = toBoss.length();
+    const force = type === "heavy" ? 22 : 16;
+    this.player.knockback.addScaledVector(toBoss.normalize(), Math.min(force, distance * 2.2));
+    this.player.verticalVelocity = Math.max(this.player.verticalVelocity, -0.18);
+    this.player.airHeight = Math.max(this.player.airHeight, 0.08);
+    this.setMessage("Aerial rush.");
   }
 
   releaseWeaponSpecial(chargeTime) {
@@ -1054,7 +1081,8 @@ export class DarkSoulsGame {
         spin: 12,
         owner: "player",
         playerSpecial: "needle",
-        pingPong: true
+        pingPong: true,
+        reflects: 0
       });
     }
     this.audio.projectileSpawn("ice");
@@ -1091,48 +1119,85 @@ export class DarkSoulsGame {
   projectileTouchesBossShield(projectile) {
     if (this.boss.shield <= 0 || projectile.owner !== "player") return false;
     const shieldCenter = this.boss.position.clone().add(new THREE.Vector3(0, 1.55, 0));
-    const radius = projectile.playerSpecial === "slash" ? 4.2 : 3.4;
+    const radius = projectile.playerSpecial === "slash" ? 4.1 : 3.35;
     return projectile.mesh.position.distanceTo(shieldCenter) < radius;
   }
 
   blockPlayerProjectileWithShield(projectile) {
     this.boss.shieldHits += 1;
+    if (this.boss.shieldHits >= BOSS_SHIELD_BREAK_HITS) {
+      projectile.life = 0;
+      this.breakBossShield();
+      this.damageBossFromProjectile(projectile, "shieldBreak");
+      this.spawnParticles(projectile.mesh.position.clone(), 22, 0xf2fdff);
+      this.setMessage("The mirror shield shatters. The spell punches through.");
+      return;
+    }
+
     if (projectile.playerSpecial !== "needle") {
       projectile.life = 0;
       this.spawnParticles(projectile.mesh.position.clone(), 14, projectile.playerSpecial === "flame" ? 0xff3b1f : 0xffea64);
       this.shake = Math.max(this.shake, 0.12);
-      this.setMessage("The mirror shield eats the blow.");
-      if (this.boss.shieldHits >= 30) this.breakBossShield();
+      this.audio.clank();
+      this.setMessage(`The mirror shield cracks (${this.boss.shieldHits}/${BOSS_SHIELD_BREAK_HITS}).`);
       return;
     }
 
     projectile.owner = "boss";
     projectile.deflected = false;
     projectile.life = 3.2;
-    projectile.damage = 16;
-    projectile.speed = Math.max(projectile.speed, 17);
+    projectile.reflects = (projectile.reflects || 0) + 1;
+    projectile.damage = this.getPingPongDamage(projectile);
+    projectile.speed = Math.max(projectile.speed + 1.8, 17 + projectile.reflects * 1.4);
     projectile.direction.copy(
       this.player.position.clone().add(new THREE.Vector3(0, 0.9, 0)).sub(projectile.mesh.position).normalize()
     );
-    projectile.mesh.material.color.set(0xff2d24);
-    projectile.mesh.material.emissive?.set(0xff0900);
+    this.updatePingPongProjectileVisual(projectile);
     this.spawnParticles(projectile.mesh.position.clone(), 10, 0x55caff);
     this.shake = Math.max(this.shake, 0.16);
-    this.setMessage("The shield returns the needle.");
-    if (this.boss.shieldHits >= 30) this.breakBossShield();
+    this.audio.clank();
+    this.setMessage(projectile.reflects >= 4 ? "The needle is becoming unstable." : `The shield returns the needle (${this.boss.shieldHits}/${BOSS_SHIELD_BREAK_HITS}).`);
+  }
+
+  getProjectileDamage(projectile) {
+    return Math.max(1, projectile.damage || (projectile.playerSpecial === "deflect" ? 18 : 12));
+  }
+
+  damageBossFromProjectile(projectile, fallbackType = "special") {
+    const type = projectile.playerSpecial || fallbackType;
+    this.damageBoss(this.getProjectileDamage(projectile), type);
+    if (type === "flame") this.audio.fireImpact();
   }
 
   deflectPingPongProjectile(projectile) {
     projectile.owner = "player";
     projectile.life = 3.2;
-    projectile.speed = Math.max(projectile.speed, 18);
+    projectile.reflects = (projectile.reflects || 0) + 1;
+    projectile.damage = this.getPingPongDamage(projectile);
+    projectile.speed = Math.max(projectile.speed + 1.8, 18 + projectile.reflects * 1.5);
     projectile.direction.copy(
       this.boss.position.clone().add(new THREE.Vector3(0, 1.3, 0)).sub(projectile.mesh.position).normalize()
     );
-    projectile.mesh.material.color.set(0x55caff);
-    projectile.mesh.material.emissive?.set(0x168cff);
+    this.updatePingPongProjectileVisual(projectile);
     this.spawnParticles(projectile.mesh.position.clone(), 12, 0x55caff);
-    this.setMessage("Needle returned.");
+    this.triggerSlowMo(0.28, 0.24);
+    this.setMessage(projectile.reflects >= 4 ? "Supercharged needle returned." : "Needle returned.");
+  }
+
+  getPingPongDamage(projectile) {
+    return Math.min(54, 8 + (projectile.reflects || 0) * 7);
+  }
+
+  updatePingPongProjectileVisual(projectile) {
+    const power = clamp((projectile.reflects || 0) / 6, 0, 1);
+    const color = new THREE.Color(0x55caff).lerp(new THREE.Color(0xf2fdff), power);
+    const emissive = new THREE.Color(0x168cff).lerp(new THREE.Color(0xdff8ff), power);
+    projectile.mesh.material.color.copy(color);
+    projectile.mesh.material.emissive?.copy(emissive);
+    if (projectile.mesh.material.emissiveIntensity !== undefined) {
+      projectile.mesh.material.emissiveIntensity = 2.6 + power * 2.2;
+    }
+    projectile.mesh.scale.setScalar(1 + (projectile.reflects || 0) * 0.18);
   }
 
   updateSwordAnimation() {
@@ -1215,7 +1280,7 @@ export class DarkSoulsGame {
       blade.material.emissive.copy(bladeColor);
       blade.material.emissiveIntensity = pulse;
       for (const object of this.player.group.children) {
-        if (object.material?.emissive && object.name !== "blade" && this.player.damageFlash <= 0) {
+        if (object.material?.emissive && object.name !== "blade" && this.player.damageFlash <= 0 && this.player.clashStun <= 0) {
           object.material.emissive.copy(bladeColor);
           object.material.emissiveIntensity = 0.25;
         }
@@ -1224,7 +1289,7 @@ export class DarkSoulsGame {
       blade.material.color.set(blade.userData.baseColor);
       blade.material.emissive.set(blade.userData.baseEmissive);
       blade.material.emissiveIntensity = 0;
-      if (this.player.damageFlash <= 0) {
+      if (this.player.damageFlash <= 0 && this.player.clashStun <= 0) {
         for (const object of this.player.group.children) {
           if (object.material?.emissive && object.name !== "blade") {
             object.material.emissive.set(0x000000);
@@ -1246,6 +1311,10 @@ export class DarkSoulsGame {
       hitbox.delay -= dt;
       if (hitbox.delay <= 0 && !hitbox.done) {
         const reach = hitbox.type === "heavy" ? this.weapon.heavyReach : this.weapon.reach;
+        if (this.resolveAttackClash(reach)) {
+          hitbox.done = true;
+          continue;
+        }
         if (this.swordCanHitBoss(reach, hitbox.type === "heavy" ? 0.72 : 0.55)) {
           this.damageBoss(hitbox.damage, hitbox.type);
           hitbox.done = true;
@@ -1257,6 +1326,61 @@ export class DarkSoulsGame {
       hitbox.time -= dt;
     }
     this.hitboxes = this.hitboxes.filter((hitbox) => hitbox.time > 0);
+  }
+
+  isBossPhysicalThreat() {
+    return [ATTACK.SLAM, ATTACK.DASH_SLAM, ATTACK.STAFF, ATTACK.LEAP].includes(this.boss.state);
+  }
+
+  resolveAttackClash(reach, allowAfterBossHit = false) {
+    if (!this.isBossPhysicalThreat() || (!allowAfterBossHit && this.boss.attackHit) || this.boss.phaseTransition > 0) return false;
+    const swordBox = this.getSwordBox(0.75);
+    const threatBox = this.getCurrentBossThreatBox(reach);
+    if (!swordBox.intersectsBox(threatBox)) return false;
+
+    this.player.clashStun = 0.72;
+    this.boss.clashStun = 0.56;
+    this.boss.attackHit = true;
+    this.player.attacking = 0;
+    this.player.attackCooldown = Math.max(this.player.attackCooldown, 0.34);
+    this.boss.stateTime = Math.min(this.boss.stateTime, 0.35);
+    this.spawnClashBurst(threatBox.getCenter(new THREE.Vector3()));
+    this.triggerSlowMo(0.34, 0.2);
+    this.audio.clank();
+    this.shake = Math.max(this.shake, 0.42);
+    this.setMessage("Clash. Both fighters recoil.");
+    return true;
+  }
+
+  getCurrentBossThreatBox(extraReach = 0) {
+    if (this.boss.state === ATTACK.STAFF) {
+      const staff = this.boss.group.getObjectByName("bossStaff");
+      if (staff) return new THREE.Box3().setFromObject(staff).expandByScalar(0.88);
+    }
+    const box = this.getBossBox();
+    const reach = this.boss.state === ATTACK.DASH_SLAM ? 2.5 : this.boss.state === ATTACK.LEAP ? 3.2 : 1.8;
+    return box.expandByScalar(Math.max(reach, extraReach * 0.35));
+  }
+
+  spawnClashBurst(position) {
+    this.spawnParticles(position.clone(), 28, 0xd7ecff);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.35, 0.045, 8, 54),
+      new THREE.MeshBasicMaterial({ color: 0xf8fbff, transparent: true, opacity: 0.9 })
+    );
+    ring.position.copy(position);
+    ring.rotation.x = Math.PI / 2;
+    this.enableBloom(ring);
+    this.scene.add(ring);
+    this.particles.push({ mesh: ring, velocity: new THREE.Vector3(), life: 0.32, maxLife: 0.32 });
+  }
+
+  triggerSlowMo(duration = 0.3, scale = 0.22) {
+    this.slowMo = Math.max(this.slowMo, duration);
+    this.slowMoScale = Math.min(this.slowMoScale, scale);
+    window.setTimeout(() => {
+      if (this.slowMo <= 0) this.slowMoScale = 1;
+    }, duration * 1000 + 40);
   }
 
   getBossDamageMultiplier() {
@@ -1324,9 +1448,47 @@ export class DarkSoulsGame {
       const force = type === "flame" ? 3.8 : type === "heavy" ? 8.5 : type === "deflect" ? 10 : 4.8;
       this.boss.knockback.addScaledVector(away, force);
     }
+    if (!this.player.grounded && (type === "light" || type === "heavy")) {
+      this.handleAerialMeleeHit();
+    }
     this.shake = Math.max(this.shake, type === "heavy" || type === "deflect" || type === "flame" ? 0.42 : 0.22);
     this.updateBossStage();
     if (this.boss.hp <= 0 && this.boss.finalFrenzyTriggered) this.endFight("victory");
+  }
+
+  handleAerialMeleeHit() {
+    const away = this.player.position.clone().sub(this.boss.position).setY(0);
+    if (away.lengthSq() < 0.001) away.set(Math.sin(this.player.facing), 0, Math.cos(this.player.facing));
+    away.normalize();
+    this.player.knockback.addScaledVector(away, 13);
+    this.player.verticalVelocity = Math.max(this.player.verticalVelocity, -0.08);
+    this.player.airHeight = Math.max(this.player.airHeight, 0.12);
+    this.player.grounded = false;
+    this.player.attackCooldown = Math.min(this.player.attackCooldown, 0.16);
+    this.player.stamina = Math.min(PLAYER.maxStamina, this.player.stamina + 8);
+    this.spawnParticles(this.player.position.clone().add(new THREE.Vector3(0, 1.05, 0)), 10, 0xd7ecff);
+    this.setMessage("Air hit. Recoil and re-engage.");
+    if (
+      this.boss.phase >= 2 &&
+      this.boss.state === "idle" &&
+      this.boss.phaseTransition <= 0 &&
+      this.boss.finalFrenzyCharge <= 0 &&
+      Math.random() < 0.46
+    ) {
+      this.startAntiAirBlast();
+    }
+  }
+
+  startAntiAirBlast() {
+    this.combo = [];
+    this.comboIndex = 0;
+    this.comboTimer = 0;
+    this.comboRecovery = 0.85;
+    this.startBossPrimitive(ATTACK.DOME_BLAST, this.player.position.distanceTo(this.boss.position));
+    this.boss.antiAirBlast = true;
+    this.boss.stateTime = Math.min(this.boss.stateTime, 1.45);
+    this.shake = Math.max(this.shake, 0.28);
+    this.setMessage("The Warlock counters the air with a blast.");
   }
 
   updateBossStage() {
@@ -1369,15 +1531,15 @@ export class DarkSoulsGame {
     this.setMessage("The ward dies. The Warlock burns red.");
   }
 
-  tryRaiseBossShieldSoon() {
+  tryRaiseBossShieldSoon(warnTime = 0.35) {
     if (this.boss.shield > 0 || this.boss.shieldCooldown > 0 || this.boss.stagger > 0 || this.ended) return;
-    this.boss.shieldWarn = 0.35;
+    this.boss.shieldWarn = warnTime;
     this.setMessage("The Warlock reaches for a mirror shield.");
   }
 
   activateBossShield() {
     if (this.boss.shieldCooldown > 0 || this.boss.shield > 0) return;
-    this.boss.shield = 7.5;
+    this.boss.shield = 9.5;
     this.boss.shieldHits = 0;
     this.boss.shieldWarn = 0;
     this.shake = Math.max(this.shake, 0.16);
@@ -1387,9 +1549,10 @@ export class DarkSoulsGame {
 
   breakBossShield() {
     this.boss.shield = 0;
-    this.boss.shieldCooldown = 8.5;
+    this.boss.shieldCooldown = 7.5;
     this.boss.shieldHits = 0;
     this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.6, 0)), 34, 0x55caff);
+    this.audio.clank();
     this.shake = Math.max(this.shake, 0.42);
     this.setMessage("The mirror shield shatters.");
   }
@@ -1404,7 +1567,7 @@ export class DarkSoulsGame {
       this.boss.shield -= dt;
       if (this.boss.shield <= 0) {
         this.boss.shield = 0;
-        this.boss.shieldCooldown = 8.5;
+        this.boss.shieldCooldown = 7.5;
       }
     }
 
@@ -1415,7 +1578,7 @@ export class DarkSoulsGame {
     if (!active) return;
     const pulse = 0.82 + Math.sin(this.clock.elapsedTime * 12) * 0.08;
     shield.material.opacity = this.boss.shield > 0 ? pulse : 0.38;
-    shield.scale.setScalar(this.boss.shield > 0 ? 1 : 0.45 + (1 - this.boss.shieldWarn / 0.35) * 0.55);
+    shield.scale.setScalar(this.boss.shield > 0 ? 1 : 0.42 + (1 - this.boss.shieldWarn / 0.35) * 0.58);
   }
 
   updateBoss(dt, elapsed) {
@@ -1444,10 +1607,10 @@ export class DarkSoulsGame {
         this.boss.finalFrenzy = true;
         this.boss.group.scale.setScalar(1);
         this.combo = [
-          { attack: ATTACK.DASH_SLAM, gap: 0.04 },
-          { attack: ATTACK.DASH_SLAM, gap: 0.04 },
-          { attack: ATTACK.DASH_SLAM, gap: 0.04 },
-          { attack: ATTACK.STAFF, gap: 0.06 }
+          { attack: ATTACK.SLAM, gap: 0.04 },
+          { attack: ATTACK.STAFF, gap: 0.04 },
+          { attack: ATTACK.SLAM, gap: 0.04 },
+          { attack: ATTACK.RAPID_FIRE, gap: 0.06 }
         ];
         this.comboIndex = 0;
         this.comboTimer = 0;
@@ -1467,6 +1630,11 @@ export class DarkSoulsGame {
       }
       return;
     }
+    if (this.boss.clashStun > 0) {
+      this.boss.clashStun = Math.max(0, this.boss.clashStun - dt);
+      this.boss.group.scale.setScalar(1 + Math.sin(elapsed * 24) * 0.04);
+      return;
+    }
     if (this.boss.stagger > 0) {
       this.boss.stagger -= dt;
       return;
@@ -1484,9 +1652,22 @@ export class DarkSoulsGame {
       return;
     }
 
+    this.boss.moveDashCooldown = Math.max(0, this.boss.moveDashCooldown - dt);
+    if (this.boss.moveDashTime > 0) {
+      this.updateBossMovementDash(dt, tuning);
+      return;
+    }
+
     const dist = Math.max(0.001, toPlayer.length());
-    if (dist > 4.4) {
-      this.boss.position.addScaledVector(toPlayer.normalize(), tuning.movementSpeed * dt);
+    const pendingAttack = this.combo[this.comboIndex]?.attack;
+    const approachRange = this.getBossApproachRange(pendingAttack);
+    if (this.shouldBossMovementDash(dist, approachRange)) {
+      this.startBossMovementDash(toPlayer, tuning);
+      return;
+    }
+    if (dist > approachRange) {
+      const approachBoost = this.isBossPositionedAttack(pendingAttack) ? 1.65 : 1.18;
+      this.boss.position.addScaledVector(toPlayer.normalize(), tuning.movementSpeed * approachBoost * dt);
     }
 
     if (this.comboRecovery > 0) {
@@ -1501,6 +1682,45 @@ export class DarkSoulsGame {
     this.comboTimer -= dt;
     if (this.comboTimer <= 0) {
       this.chooseBossAttack(dist);
+    }
+  }
+
+  shouldBossMovementDash(dist, approachRange) {
+    if (this.boss.moveDashCooldown > 0 || this.boss.phaseTransition > 0 || this.boss.finalFrenzyCharge > 0) return false;
+    const threshold = this.boss.phase >= 4 ? approachRange + 2.4 : approachRange + 3.8;
+    if (dist < threshold) return false;
+    if (this.boss.finalFrenzy) return true;
+    return Math.random() < (this.boss.phase >= 4 ? 0.18 : 0.1);
+  }
+
+  startBossMovementDash(toPlayer, tuning) {
+    const direction = toPlayer.clone().setY(0);
+    if (direction.lengthSq() < 0.001) return;
+    direction.normalize();
+    const sidestep = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(randomBetween(-0.22, 0.22));
+    this.boss.moveDashDirection.copy(direction.add(sidestep).normalize());
+    this.boss.moveDashTime = this.boss.phase >= 4 ? 0.22 : 0.18;
+    this.boss.moveDashCooldown = randomBetween(0.42, this.boss.phase >= 4 ? 0.72 : 1.05);
+    this.boss.dashTravel = 0;
+    this.shake = Math.max(this.shake, 0.08);
+    if (this.boss.phase >= 4) this.groundShake = Math.max(this.groundShake, 0.1);
+    this.setMessage("The Warlock rushes in.");
+  }
+
+  updateBossMovementDash(dt, tuning) {
+    const speed = tuning.dashSpeed * (this.boss.finalFrenzy ? 0.95 : 0.72);
+    const step = speed * dt;
+    this.boss.dashTravel += step;
+    this.boss.position.addScaledVector(this.boss.moveDashDirection, step);
+    this.boss.position.x = clamp(this.boss.position.x, -ARENA.halfSize + 2, ARENA.halfSize - 2);
+    this.boss.position.z = clamp(this.boss.position.z, -ARENA.halfSize + 2, ARENA.halfSize - 2);
+    this.boss.group.position.copy(this.boss.position);
+    this.boss.group.rotation.z = Math.sin(this.clock.elapsedTime * 24) * 0.08;
+    this.boss.group.scale.setScalar(1.03 + Math.sin(this.clock.elapsedTime * 18) * 0.03);
+    this.boss.moveDashTime = Math.max(0, this.boss.moveDashTime - dt);
+    if (this.boss.moveDashTime <= 0) {
+      this.boss.group.rotation.z = 0;
+      this.boss.group.scale.setScalar(1);
     }
   }
 
@@ -1551,6 +1771,11 @@ export class DarkSoulsGame {
       this.comboRecovery = randomBetween(tuning.comboRecovery[0], tuning.comboRecovery[1]);
       return;
     }
+    const approachRange = this.getBossApproachRange(step.attack);
+    if (dist > approachRange + 0.15) {
+      this.comboTimer = 0.08;
+      return;
+    }
     this.startBossPrimitive(step.attack, dist);
     this.comboIndex += 1;
     this.comboTimer = step.gap;
@@ -1560,6 +1785,17 @@ export class DarkSoulsGame {
       this.comboRecovery = randomBetween(tuning.comboRecovery[0], tuning.comboRecovery[1]);
     }
     this.boss.attackHit = false;
+  }
+
+  isBossPositionedAttack(attack) {
+    return [ATTACK.SLAM, ATTACK.DASH_SLAM, ATTACK.STAFF].includes(attack);
+  }
+
+  getBossApproachRange(attack) {
+    if (attack === ATTACK.SLAM) return 3.15;
+    if (attack === ATTACK.STAFF) return 4.15;
+    if (attack === ATTACK.DASH_SLAM) return 4.7;
+    return 4.4;
   }
 
   buildCombo() {
@@ -1577,6 +1813,8 @@ export class DarkSoulsGame {
     this.boss.tripleShots = 0;
     this.boss.rapidShots = 0;
     this.boss.rapidTimer = 0;
+    this.boss.dashTravel = 0;
+    this.boss.antiAirBlast = false;
     if (attack === ATTACK.SLAM) this.boss.stateTime = (telegraph + 0.38) * tuning.attackTimeScale;
     if (attack === ATTACK.PROJECTILE) this.boss.stateTime = (telegraph + 0.2) * tuning.attackTimeScale;
     if (attack === ATTACK.SPREAD) this.boss.stateTime = (telegraph + 0.2) * tuning.attackTimeScale;
@@ -1591,8 +1829,8 @@ export class DarkSoulsGame {
     if (attack === ATTACK.TRIPLE_PROJECTILE) this.boss.stateTime = (telegraph + 0.9) * tuning.attackTimeScale;
     if (attack === ATTACK.BARRAGE) this.boss.stateTime = (phaseTwo ? 1.65 : 1.9) * tuning.attackTimeScale;
     if (attack === ATTACK.RAPID_FIRE) {
-      this.boss.stateTime = 10.45;
-      this.setMessage("The Warlock opens a machine storm.");
+      this.boss.stateTime = 4.05;
+      this.setMessage("The Warlock's staff begins to scream.");
     }
     if (attack === ATTACK.DOME_BLAST) {
       this.boss.stateTime = 2.45;
@@ -1612,6 +1850,58 @@ export class DarkSoulsGame {
       this.boss.dashDirection.copy(this.player.position).sub(this.boss.position).setY(0).normalize();
     }
     if (attack === ATTACK.SLAM && dist > BOSS.meleeRange + 2) this.boss.stateTime += 0.2 * tuning.attackTimeScale;
+    this.showBossAttackIndicator(attack, this.boss.stateTime);
+  }
+
+  showBossAttackIndicator(attack, duration = 0.6) {
+    let mesh;
+    if (attack === ATTACK.STAFF || attack === ATTACK.DASH_SLAM || attack === ATTACK.SLAM || attack === ATTACK.LEAP) {
+      const width = attack === ATTACK.STAFF ? 1.2 : attack === ATTACK.DASH_SLAM ? 2.4 : 3.4;
+      const depth = attack === ATTACK.STAFF ? 5.2 : attack === ATTACK.DASH_SLAM ? 5.6 : 3.6;
+      mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(width, depth),
+        new THREE.MeshBasicMaterial({
+          color: attack === ATTACK.STAFF ? 0xffd36b : 0xff4a2a,
+          transparent: true,
+          opacity: 0.28,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        })
+      );
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.copy(this.boss.position).addScaledVector(this.bossForward(), depth * 0.38);
+      mesh.position.y = 0.045;
+      mesh.rotation.z = -this.boss.group.rotation.y;
+    }
+    if (!mesh) return;
+    this.enableBloom(mesh);
+    this.scene.add(mesh);
+    this.attackIndicators.push({ mesh, attack, life: Math.min(duration, 1.1), maxLife: Math.min(duration, 1.1) });
+  }
+
+  updateAttackIndicators(dt) {
+    for (const indicator of this.attackIndicators) {
+      indicator.life -= dt;
+      const fade = Math.max(0, indicator.life / indicator.maxLife);
+      indicator.mesh.material.opacity = 0.34 * fade + Math.sin(this.clock.elapsedTime * 24) * 0.04;
+      if (indicator.attack === ATTACK.STAFF || indicator.attack === ATTACK.DASH_SLAM || indicator.attack === ATTACK.SLAM || indicator.attack === ATTACK.LEAP) {
+        const depth = indicator.attack === ATTACK.STAFF ? 5.2 : indicator.attack === ATTACK.DASH_SLAM ? 5.6 : 3.6;
+        indicator.mesh.position.copy(this.boss.position).addScaledVector(this.bossForward(), depth * 0.38);
+        indicator.mesh.position.y = 0.045;
+        indicator.mesh.rotation.z = -this.boss.group.rotation.y;
+      }
+    }
+    this.attackIndicators = this.attackIndicators.filter((indicator) => {
+      if (indicator.life > 0) return true;
+      this.scene.remove(indicator.mesh);
+      indicator.mesh.geometry?.dispose?.();
+      indicator.mesh.material?.dispose?.();
+      return false;
+    });
+  }
+
+  bossForward() {
+    return new THREE.Vector3(Math.sin(this.boss.group.rotation.y), 0, Math.cos(this.boss.group.rotation.y)).normalize();
   }
 
   updateBossAttack(dt) {
@@ -1648,10 +1938,16 @@ export class DarkSoulsGame {
     }
     if (this.boss.state === ATTACK.RAPID_FIRE) {
       this.boss.group.rotation.z = Math.sin(progress * Math.PI * 12) * 0.04;
+      if (progress < RAPID_FIRE_TELL) {
+        this.animateRapidFireTell(progress / RAPID_FIRE_TELL, dt);
+        this.groundShake = Math.max(this.groundShake, progress * 0.18);
+        return;
+      }
+      this.animateRapidFireTell(1, dt, true);
       this.boss.rapidTimer -= dt;
-      while (this.boss.rapidShots < 100 && this.boss.rapidTimer <= 0) {
+      while (this.boss.rapidShots < RAPID_FIRE_SHOTS && this.boss.rapidTimer <= 0) {
         this.boss.rapidShots += 1;
-        this.boss.rapidTimer += 0.1;
+        this.boss.rapidTimer += RAPID_FIRE_INTERVAL;
         this.castRapidProjectile(this.boss.rapidShots);
       }
     }
@@ -1700,7 +1996,10 @@ export class DarkSoulsGame {
       const tuning = getBossTuning(this.boss.phase);
       const frenzyBoost = this.boss.finalFrenzy ? 1.35 : 1;
       if (progress > 0.18 && progress < 0.46) {
-        this.boss.position.addScaledVector(this.boss.dashDirection, tuning.dashSpeed * frenzyBoost * dt);
+        const maxDashTravel = this.boss.phase >= 5 ? 3.8 : this.boss.phase >= 4 ? 3.2 : 2.65;
+        const step = Math.min(tuning.dashSpeed * frenzyBoost * dt, Math.max(0, maxDashTravel - this.boss.dashTravel));
+        this.boss.dashTravel += step;
+        this.boss.position.addScaledVector(this.boss.dashDirection, step);
         this.boss.position.x = clamp(this.boss.position.x, -ARENA.halfSize + 2, ARENA.halfSize - 2);
         this.boss.position.z = clamp(this.boss.position.z, -ARENA.halfSize + 2, ARENA.halfSize - 2);
       }
@@ -1740,6 +2039,7 @@ export class DarkSoulsGame {
     this.shake = Math.max(this.shake, 0.34);
     this.groundShake = Math.max(this.groundShake, 0.38);
     this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 0.3, 0)), 14, 0xff8a35);
+    if (this.player.attacking > 0 && this.resolveAttackClash(this.weapon.heavyReach, true)) return;
     if (this.getBossBox().expandByScalar(BOSS.meleeRange).intersectsBox(this.getPlayerBox())) {
       this.damagePlayer(isDash ? 30 : BOSS.meleeDamage, isDash ? "dash" : "slam");
     }
@@ -1787,12 +2087,42 @@ export class DarkSoulsGame {
     this.boss.group.rotation.z = Math.sin(progress * Math.PI) * 0.18;
   }
 
+  animateRapidFireTell(progress, dt, firing = false) {
+    const staff = this.boss.group.getObjectByName("bossStaff");
+    const rightArm = this.boss.group.getObjectByName("bossRightArm");
+    if (!staff) return;
+    const charge = easeOut(progress);
+    staff.position.set(1.12 - charge * 0.2, 1.82 + charge * 0.28, -0.05 - charge * 0.35);
+    staff.rotation.x = -0.42 - charge * 0.55 + (firing ? Math.sin(this.clock.elapsedTime * 34) * 0.08 : 0);
+    staff.rotation.z = -0.36 + charge * 0.22;
+    if (staff.material?.emissive) {
+      staff.material.emissive.set(0x55caff);
+      staff.material.emissiveIntensity = 0.7 + charge * 2.8 + (firing ? Math.sin(this.clock.elapsedTime * 28) * 0.45 : 0);
+    }
+    if (rightArm) {
+      rightArm.rotation.x = -0.35 - charge * 0.6;
+      rightArm.rotation.z = -0.2 + charge * 0.18;
+    }
+    const sparkChance = firing ? dt * 35 : dt * 18;
+    if (Math.random() < sparkChance) {
+      this.spawnParticles(
+        this.boss.position.clone().add(new THREE.Vector3(0.9, 2.85 + charge * 0.45, 0.25)),
+        firing ? 3 : 2,
+        firing ? 0xf2fdff : 0x55caff
+      );
+    }
+  }
+
   resetBossWeaponPose() {
     const staff = this.boss.group.getObjectByName("bossStaff");
     const rightArm = this.boss.group.getObjectByName("bossRightArm");
     if (staff) {
       staff.position.set(1.25, 1.75, 0.1);
       staff.rotation.set(0, 0, -0.08);
+      if (staff.material?.emissive) {
+        staff.material.emissive.set(0x000000);
+        staff.material.emissiveIntensity = 0;
+      }
     }
     if (rightArm) {
       rightArm.position.set(0.82, 1.95, 0.02);
@@ -1808,6 +2138,7 @@ export class DarkSoulsGame {
     this.spawnParticles(staffCenter.clone(), 18, 0xffd36b);
     this.shake = Math.max(this.shake, 0.26);
     this.groundShake = Math.max(this.groundShake, 0.3);
+    if (this.player.attacking > 0 && this.resolveAttackClash(this.weapon.heavyReach, true)) return;
     if (staffBox.intersectsBox(this.getPlayerBox())) {
       this.damagePlayer(20, "staff");
       const away = this.player.position.clone().sub(this.boss.position).setY(0);
@@ -1856,6 +2187,7 @@ export class DarkSoulsGame {
     owner = "boss",
     playerSpecial = "",
     pingPong = false,
+    reflects = 0,
     slow = false
   }) {
     this.scene.add(mesh);
@@ -1871,15 +2203,21 @@ export class DarkSoulsGame {
       owner,
       playerSpecial,
       pingPong,
+      reflects,
       slow
     });
   }
 
   castRapidProjectile(shot) {
-    if (shot % 6 === 1) this.audio.projectileSpawn(shot % 12 === 1 ? "ice" : "fire");
     const tuning = getBossTuning(this.boss.phase);
     const seekerType = PROJECTILE_TYPES.find((projectile) => projectile.homing);
-    const type = shot % 9 === 0 && seekerType ? seekerType : PROJECTILE_TYPES[(shot - 1) % PROJECTILE_TYPES.length];
+    const type = shot % 5 === 0 && seekerType ? seekerType : PROJECTILE_TYPES[(shot - 1) % PROJECTILE_TYPES.length];
+    const soundKind = type.name === "blue star" || type.name === "frost bead" || type.homing ? "ice" : "fire";
+    this.audio.projectileSpawn(soundKind, {
+      volume: type.homing ? 0.26 : 0.13,
+      rate: type.homing ? 1.18 : 1.42,
+      detune: (shot % 12) * 18
+    });
     const start = this.boss.position.clone().add(new THREE.Vector3(
       randomBetween(-0.38, 0.38),
       randomBetween(1.35, 2.35),
@@ -1897,12 +2235,12 @@ export class DarkSoulsGame {
     this.pushProjectile({
       mesh,
       direction,
-      speed: type.speed + randomBetween(-1.2, 2.2) + tuning.projectileSpeedBonus,
-      life: type.homing ? 4.4 : 3.4,
+      speed: type.speed + randomBetween(-0.8, 2.8) + tuning.projectileSpeedBonus + 1.4,
+      life: type.homing ? 4.8 : 3.2,
       damage: type.damage,
       spin: randomBetween(5, 13),
       homing: Boolean(type.homing),
-      turnRate: type.homing ? 1.9 : 0,
+      turnRate: type.homing ? 2.45 : 0,
       slow: type.name === "blue star" || type.name === "frost bead"
     });
   }
@@ -1942,16 +2280,17 @@ export class DarkSoulsGame {
       this.player.verticalVelocity = Math.max(this.player.verticalVelocity, 13);
       this.player.airHeight = Math.max(this.player.airHeight, 0.35);
       this.player.grounded = false;
-      this.damagePlayer(32, "dome");
-      this.setMessage("The dome detonates.");
+      this.damagePlayer(this.boss.antiAirBlast ? Math.round(PLAYER.maxHp * 0.35) : 32, "dome");
+      this.setMessage(this.boss.antiAirBlast ? "Anti-air blast. The sky throws you back." : "The dome detonates.");
     }
+    this.boss.antiAirBlast = false;
     this.breakPillarsInBox(this.getBossBox().expandByScalar(radius));
   }
 
   castOrb(type = PROJECTILE_TYPES[0]) {
     const tuning = getBossTuning(this.boss.phase);
     this.groundShake = Math.max(this.groundShake, 0.16);
-    this.audio.projectileSpawn(type.name === "blue star" || type.name === "frost bead" ? "ice" : "fire");
+    this.audio.projectileSpawn(type.name === "blue star" || type.name === "frost bead" ? "ice" : "fire", { volume: 0.68, rate: 0.98 });
     const start = this.boss.position.clone().add(new THREE.Vector3(0, 1.7, 0));
     const direction = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)).sub(start).normalize();
     const mesh = this.makeProjectileMesh(type);
@@ -1971,12 +2310,15 @@ export class DarkSoulsGame {
 
   castSpread() {
     const tuning = getBossTuning(this.boss.phase);
-    this.audio.projectileSpawn("fire");
     const start = this.boss.position.clone().add(new THREE.Vector3(0, 1.7, 0));
     const base = this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)).sub(start).normalize();
     for (const angle of [-Math.PI / 12, 0, Math.PI / 12]) {
       const direction = base.clone().applyAxisAngle(UP, angle).normalize();
       const type = PROJECTILE_TYPES[1 + Math.floor(Math.random() * 4)];
+      this.audio.projectileSpawn(type.name === "blue star" || type.name === "frost bead" ? "ice" : "fire", {
+        volume: 0.32,
+        rate: 1.04 + Math.random() * 0.16
+      });
       const mesh = this.makeProjectileMesh(type);
       mesh.position.copy(start);
       this.pushProjectile({
@@ -2045,6 +2387,11 @@ export class DarkSoulsGame {
     this.groundShake = Math.max(this.groundShake, 0.55);
     this.setMessage("The sky answers the staff.");
     for (let i = 0; i < 28; i += 1) {
+      this.audio.projectileSpawn(i % 4 === 0 ? "ice" : "fire", {
+        volume: 0.15,
+        rate: 1.18 + Math.random() * 0.28,
+        detune: i * 13
+      });
       const spread = i < 12 ? 7 : 16;
       const target = this.player.position.clone().add(new THREE.Vector3(
         (Math.random() - 0.5) * spread,
@@ -2082,6 +2429,7 @@ export class DarkSoulsGame {
 
   castChain() {
     this.shake = Math.max(this.shake, 0.22);
+    this.audio.projectileSpawn("ice", { volume: 0.56, rate: 0.82, detune: -180 });
     const start = this.boss.position.clone().add(new THREE.Vector3(0, 1.45, 0));
     const target = this.player.position.clone().add(new THREE.Vector3(0, 0.9, 0));
     const direction = target.sub(start).normalize();
@@ -2170,6 +2518,10 @@ export class DarkSoulsGame {
         const projectileBox = new THREE.Box3().setFromObject(projectile.mesh).expandByScalar(0.15);
 
         if (projectile.owner === "player") {
+          if (projectile.flameLine) {
+            this.reflectProjectilesWithFlame(projectileBox);
+          }
+
           if (this.projectileTouchesBossShield(projectile)) {
             this.blockPlayerProjectileWithShield(projectile);
             continue;
@@ -2186,8 +2538,7 @@ export class DarkSoulsGame {
 
           if (projectileBox.intersectsBox(this.getBossBox())) {
             projectile.life = 0;
-            this.damageBoss(projectile.damage || 18, projectile.playerSpecial || "special");
-            if (projectile.playerSpecial === "flame") this.audio.fireImpact();
+            this.damageBossFromProjectile(projectile, "special");
             this.spawnParticles(projectile.mesh.position.clone(), 12, projectile.playerSpecial === "needle" ? 0x55caff : 0xff5b3a);
           }
           continue;
@@ -2195,7 +2546,7 @@ export class DarkSoulsGame {
 
         if (projectile.deflected && projectileBox.intersectsBox(this.getBossBox())) {
           projectile.life = 0;
-          this.damageBoss(45, "deflect");
+          this.damageBossFromProjectile(projectile, "deflect");
           this.spawnParticles(projectile.mesh.position.clone(), 18, 0xffe66d);
           this.setMessage("The Warlock eats his own flame.");
         } else if (projectile.pingPong && this.canDeflectProjectile(projectileBox)) {
@@ -2254,6 +2605,7 @@ export class DarkSoulsGame {
         this.audio.parry();
         this.spawnGuardImpact();
         this.spawnParticles(this.boss.position.clone().add(new THREE.Vector3(0, 1.45, 0)), 24, 0xd7ecff);
+        this.triggerSlowMo(0.42, 0.18);
         this.setMessage("Crushing parry. The Warlock reels.");
         if (this.boss.hp <= 0) this.endFight("victory");
         return;
@@ -2395,6 +2747,23 @@ export class DarkSoulsGame {
     return swordBox.intersectsBox(projectileBox);
   }
 
+  reflectProjectilesWithFlame(flameBox) {
+    for (const projectile of this.projectiles) {
+      if (projectile.owner === "player" || projectile.deflected || projectile.life <= 0) continue;
+      if (projectile.aoe || projectile.dome || projectile.chargeDome || projectile.sky || projectile.chain) continue;
+      const box = new THREE.Box3().setFromObject(projectile.mesh).expandByScalar(0.28);
+      if (!flameBox.intersectsBox(box)) continue;
+      this.deflectProjectile(projectile, {
+        message: "Cinder wave reflects the spell.",
+        color: 0xff7a35,
+        emissive: 0xff2d18,
+        slowMo: 0.2
+      });
+      projectile.damage = Math.max(projectile.damage || BOSS.projectileDamage, 18);
+      this.spawnParticles(projectile.mesh.position.clone(), 14, 0xff7a35);
+    }
+  }
+
   breakPillarsInBox(box) {
     for (const segment of this.pillarSegments) {
       if (!segment.destroyed && box.intersectsBox(segment.box)) {
@@ -2466,18 +2835,22 @@ export class DarkSoulsGame {
     });
   }
 
-  deflectProjectile(projectile) {
+  deflectProjectile(projectile, options = {}) {
     const direction = this.boss.position.clone().add(new THREE.Vector3(0, 1.4, 0)).sub(projectile.mesh.position).normalize();
+    projectile.owner = "player";
+    projectile.playerSpecial = "deflect";
+    this.tryRaiseBossShieldSoon(0.12);
     projectile.direction.copy(direction);
     projectile.speed = Math.max(projectile.speed, 12.5);
     projectile.life = Math.max(projectile.life, 1.2);
     projectile.deflected = true;
     projectile.homing = false;
     projectile.turnRate = 0;
-    projectile.mesh.material.color.set(0xfff08a);
-    projectile.mesh.material.emissive?.set(0xffd34f);
-    this.spawnParticles(projectile.mesh.position.clone(), 12, 0xffe66d);
-    this.setMessage("Fireball turned back.");
+    projectile.mesh.material.color.set(options.color || 0xfff08a);
+    projectile.mesh.material.emissive?.set(options.emissive || 0xffd34f);
+    this.spawnParticles(projectile.mesh.position.clone(), 12, options.color || 0xffe66d);
+    this.triggerSlowMo(options.slowMo || 0.3, 0.22);
+    this.setMessage(options.message || "Fireball turned back.");
   }
 
   updateLegAnimation(move, elapsed) {
@@ -2544,6 +2917,9 @@ export class DarkSoulsGame {
       if (this.player.damageFlash > 0) {
         object.material.emissive.set(0x8f0000);
         object.material.emissiveIntensity = 0.8;
+      } else if (this.player.clashStun > 0) {
+        object.material.emissive.set(0xf6fbff);
+        object.material.emissiveIntensity = 0.9 + Math.sin(this.clock.elapsedTime * 28) * 0.28;
       } else if (object.name !== "blade") {
         object.material.emissive.set(0x000000);
         object.material.emissiveIntensity = 0;
